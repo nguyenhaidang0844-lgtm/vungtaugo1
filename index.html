@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VUNGTAUGO! Ultimate Tracker</title>
+    <title>VUNGTAUGO! Pro Tracker</title>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&display=swap" rel="stylesheet">
     <style>
@@ -15,22 +15,21 @@
         }
         .container {
             width: 90%; max-width: 400px; background: var(--card);
-            border-radius: 40px; padding: 30px; border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 40px; padding: 35px 25px; border: 1px solid rgba(255,255,255,0.1);
             box-shadow: 0 20px 40px rgba(0,0,0,0.4); text-align: center;
         }
-        .main-stat { margin: 20px 0; }
-        .step-count { font-size: 72px; font-weight: 800; background: linear-gradient(to bottom, #fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
-        .distance-sub { font-size: 18px; color: var(--primary); font-weight: 600; margin-top: 10px; }
-        .grid-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 30px; }
-        .stat-item { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 20px; font-size: 13px; color: #94a3b8; }
-        .stat-item b { display: block; font-size: 18px; color: #fff; }
+        .step-count { font-size: 80px; font-weight: 800; color: #fff; line-height: 1; margin: 10px 0; }
+        .distance-sub { font-size: 20px; color: var(--primary); font-weight: 600; margin-bottom: 20px; }
+        .grid-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .stat-item { background: rgba(255,255,255,0.05); padding: 15px; border-radius: 20px; font-size: 12px; color: #94a3b8; }
+        .stat-item b { display: block; font-size: 18px; color: #fff; margin-top: 5px; }
         .btn {
             background: linear-gradient(135deg, var(--secondary), var(--primary));
-            border: none; color: #fff; padding: 20px; border-radius: 20px;
+            border: none; color: #fff; padding: 20px; border-radius: 22px;
             width: 100%; font-size: 18px; font-weight: 700; cursor: pointer;
-            margin-top: 30px; transition: 0.3s;
+            margin-top: 30px; box-shadow: 0 10px 20px rgba(0,242,254,0.2);
         }
-        .status { font-size: 11px; margin-top: 15px; color: #4b5563; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .status { font-size: 12px; margin-top: 20px; color: #4b5563; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .dot { width: 8px; height: 8px; border-radius: 50%; background: #374151; }
         .dot.active { background: #22c55e; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
@@ -38,28 +37,26 @@
 </head>
 <body>
 
-<div class="container" id="app">
+<div class="container">
     <div id="start-screen">
-        <h1 style="font-size: 24px;">VUNGTAUGO!</h1>
-        <p style="color: #94a3b8;">Hệ thống Hybrid Tracking chuyên nghiệp</p>
-        <button class="btn" onclick="requestPermissions()">BẮT ĐẦU THỬ THÁCH</button>
+        <h1 style="font-size: 28px; margin-bottom: 10px;">VUNGTAUGO!</h1>
+        <p style="color: #94a3b8; margin-bottom: 30px;">Hệ thống Hybrid Tracker<br>Cầm điện thoại và đi bộ để test</p>
+        <button class="btn" onclick="requestPermissions()">BẮT ĐẦU TEST</button>
     </div>
 
     <div id="tracking-screen" style="display:none;">
-        <div class="main-stat">
-            <span class="step-count" id="steps">0</span>
-            <div style="font-size: 14px; letter-spacing: 3px; color: #64748b;">BƯỚC CHÂN</div>
-            <div class="distance-sub">≈ <span id="meters">0</span> Mét</div>
-        </div>
+        <div style="font-size: 12px; color: #64748b; letter-spacing: 2px;">BƯỚC CHÂN</div>
+        <div class="step-count" id="steps">0</div>
+        <div class="distance-sub"><span id="meters">0</span> Mét</div>
 
         <div class="grid-stats">
             <div class="stat-item">Mục tiêu<b><span id="target-m">--</span> m</b></div>
-            <div class="stat-item">Độ chính xác<b>±<span id="acc">--</span>m</b></div>
+            <div class="stat-item">GPS Status<b><span id="gps-st">Đang tìm...</span></b></div>
         </div>
 
         <div class="status">
             <div id="status-dot" class="dot"></div>
-            <span id="status-text">Đang kết nối GPS...</span>
+            <span id="status-text">Cảm biến đã sẵn sàng</span>
         </div>
     </div>
 </div>
@@ -69,43 +66,34 @@
         steps: 0,
         meters: 0,
         target: 0,
-        lastMag: 0,
         isTracking: false,
+        lastG: 9.8,
+        lastStepTime: 0,
         lastLat: null,
         lastLon: null
     };
 
     async function requestPermissions() {
-        // Cấp quyền GPS trước
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(() => {
-                console.log("GPS ok");
-            }, (err) => {
-                alert("Lỗi: Bạn chưa bật định vị trên điện thoại hoặc trình duyệt.");
-            });
-        }
-
-        // Cấp quyền Cảm biến (iOS 13+)
+        // Hỏi quyền cảm biến cho iOS
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
                 const permission = await DeviceMotionEvent.requestPermission();
-                if (permission !== 'granted') {
-                    alert("Cần quyền cảm biến để đếm bước chân!");
-                    return;
-                }
+                if (permission !== 'granted') return alert("Cần quyền cảm biến!");
             } catch (e) { console.error(e); }
         }
-        startChallenge();
+        
+        // Kích hoạt GPS ngay lập tức
+        navigator.geolocation.getCurrentPosition(() => startChallenge());
     }
 
     function startChallenge() {
-        state.target = [30, 40, 50][Math.floor(Math.random() * 3)];
+        state.target = [20, 30, 40][Math.floor(Math.random() * 3)];
         document.getElementById('start-screen').style.display = 'none';
         document.getElementById('tracking-screen').style.display = 'block';
         document.getElementById('target-m').innerText = state.target;
         document.getElementById('status-dot').classList.add('active');
         state.isTracking = true;
-
+        
         initMotion();
         initGPS();
     }
@@ -114,57 +102,48 @@
         window.addEventListener('devicemotion', (event) => {
             if (!state.isTracking) return;
             let acc = event.accelerationIncludingGravity;
-            if(!acc.x) return; // Chống lỗi cảm biến rỗng
+            if (!acc || acc.x === null) return;
+
+            // Tính Magnitude (Độ lớn lực)
+            let gForce = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
             
-            let magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
-            let delta = Math.abs(magnitude - state.lastMag);
-            
-            if (delta > 3.5) { // Ngưỡng đếm bước tối ưu
+            // Tính Delta (Sự thay đổi lực giữa 2 lần quét)
+            let delta = Math.abs(gForce - state.lastG);
+            let now = Date.now();
+
+            // Ngưỡng 2.2 là cực nhạy cho việc cầm trên tay
+            // Khoảng cách giữa 2 bước chân tối thiểu 350ms
+            if (delta > 2.2 && (now - state.lastStepTime > 350)) {
                 state.steps++;
                 document.getElementById('steps').innerText = state.steps;
+                state.lastStepTime = now;
             }
-            state.lastMag = magnitude;
+            state.lastG = gForce;
         });
     }
 
     function initGPS() {
-        // Option "Siêu xịn" cho độ ổn định cao nhất
-        const geoOptions = {
-            enableHighAccuracy: true,
-            maximumAge: 0,
-            timeout: 10000
-        };
-
         navigator.geolocation.watchPosition((pos) => {
             const { latitude, longitude, accuracy } = pos.coords;
-            document.getElementById('acc').innerText = Math.round(accuracy);
             
-            // Nếu sai số quá 40m, GPS đang rất nhiễu -> Không tính mét để tránh nhảy ảo
-            if (accuracy > 40) {
-                document.getElementById('status-text').innerText = "Đang tìm tín hiệu tốt hơn...";
+            if (accuracy > 45) {
+                document.getElementById('gps-st').innerText = "Yếu ⚠️";
                 return;
             }
+            document.getElementById('gps-st').innerText = "Tốt ✅";
 
-            document.getElementById('status-text').innerText = "Tín hiệu ổn định ✅";
-
-            if (state.lastLat !== null && state.lastLon !== null) {
+            if (state.lastLat !== null) {
                 let d = calculateDistance(state.lastLat, state.lastLon, latitude, longitude);
-                
-                // CHỐNG NHẢY SỐ: Chỉ tính nếu di chuyển từ 1.5m đến 25m
-                if (d > 1.5 && d < 25) {
+                // Nhạy hơn: Chỉ cần di chuyển 0.6m là cập nhật mét
+                if (d > 0.6 && d < 20) {
                     state.meters += d;
                     document.getElementById('meters').innerText = Math.floor(state.meters);
                     checkWin();
                 }
             }
-            
-            // Luôn cập nhật tọa độ cuối cùng để so sánh
             state.lastLat = latitude;
             state.lastLon = longitude;
-            
-        }, (err) => {
-            document.getElementById('status-text').innerText = "GPS Error: " + err.code;
-        }, geoOptions);
+        }, null, { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 });
     }
 
     function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -178,11 +157,11 @@
     function checkWin() {
         if (state.meters >= state.target) {
             state.isTracking = false;
-            Swal.fire({
-                title: 'HOÀN THÀNH!',
-                html: `Bạn đã đi được <b>${Math.floor(state.meters)}m</b>.<br>Nhận quà tại quầy ngay!`,
+            Swal.fire({ 
+                title: 'HOÀN THÀNH!', 
+                text: `Bạn đã đi đủ ${Math.floor(state.meters)}m với ${state.steps} bước chân!`, 
                 icon: 'success',
-                confirmButtonText: 'XÁC NHẬN'
+                confirmButtonText: 'NHẬN QUÀ'
             });
         }
     }
