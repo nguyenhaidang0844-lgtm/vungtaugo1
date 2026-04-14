@@ -3,157 +3,201 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VUNGTAUGO! Anti-Cheat Edition</title>
+    <title>VUNGTAUGO! Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #00f2fe; --secondary: #4facfe; --bg: #050a14; --card: #111827; --accent: #fbbf24; --danger: #ef4444; }
-        body { margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); color: #fff; height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        .container { width: 90%; max-width: 400px; background: var(--card); border-radius: 40px; padding: 35px 25px; border: 1px solid rgba(255,255,255,0.1); text-align: center; }
-        .step-count { font-size: 80px; font-weight: 800; color: #fff; line-height: 1; margin: 10px 0; }
-        .distance-sub { font-size: 24px; color: var(--primary); font-weight: 600; }
-        .btn { background: linear-gradient(135deg, var(--secondary), var(--primary)); border: none; color: #fff; padding: 20px; border-radius: 22px; width: 100%; font-size: 18px; font-weight: 700; cursor: pointer; }
-        .status-msg { font-size: 12px; height: 20px; margin-top: 15px; color: #94a3b8; transition: 0.3s; }
-        .warning { color: var(--danger) !important; font-weight: bold; animation: shake 0.3s; }
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        :root { --p: #00ffca; --s: #0575e6; --bg: #000000; --card: #121212; }
+        * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+        body { 
+            margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: #fff;
+            height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden;
+        }
+        .app-container {
+            width: 100%; max-width: 420px; height: 100vh; background: var(--bg);
+            padding: 40px 20px; display: flex; flex-direction: column; align-items: center;
+        }
+        /* Dashboard Vòng Tròn */
+        .stats-circle {
+            position: relative; width: 280px; height: 280px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            margin: 40px 0;
+        }
+        .svg-ring { position: absolute; transform: rotate(-90deg); width: 280px; height: 280px; }
+        .ring-bg { fill: none; stroke: #1a1a1a; stroke-width: 15; }
+        .ring-fill {
+            fill: none; stroke: url(#grad); stroke-width: 15; stroke-linecap: round;
+            stroke-dasharray: 816; stroke-dashoffset: 816;
+            transition: stroke-dashoffset 0.6s ease;
+        }
+        .big-data { text-align: center; z-index: 2; }
+        .big-data h1 { font-size: 72px; font-weight: 900; margin: 0; line-height: 1; letter-spacing: -2px; }
+        .big-data p { font-size: 14px; color: #666; text-transform: uppercase; letter-spacing: 2px; margin: 5px 0; }
+
+        /* Thông tin chi tiết */
+        .info-bar {
+            display: grid; grid-template-columns: 1fr 1fr; width: 100%; gap: 15px; margin-top: auto;
+        }
+        .card {
+            background: var(--card); border-radius: 24px; padding: 20px;
+            border: 1px solid #222; text-align: left;
+        }
+        .card span { font-size: 11px; color: #555; display: block; margin-bottom: 5px; text-transform: uppercase; }
+        .card b { font-size: 20px; font-weight: 700; color: var(--p); }
+
+        /* Nút Start */
+        .btn-glow {
+            background: linear-gradient(135deg, var(--s), var(--p));
+            border: none; color: #000; padding: 22px 40px; border-radius: 50px;
+            font-size: 18px; font-weight: 900; cursor: pointer; width: 100%;
+            box-shadow: 0 0 30px rgba(0, 255, 202, 0.3); transition: 0.3s;
+        }
+        .btn-glow:active { transform: scale(0.96); }
+
+        /* Màn hình kết quả */
+        #finish-screen { display: none; text-align: center; animation: fadeIn 0.5s; }
+        .qr-box { background: #fff; padding: 20px; border-radius: 30px; display: inline-block; margin-top: 20px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div id="start-screen">
-        <h1 style="font-size: 32px; margin-bottom: 5px;">VUNGTAUGO!</h1>
-        <p style="color: #64748b; margin-bottom: 30px;">Yêu cầu di chuyển thực tế</p>
-        <button class="btn" onclick="requestPermissions()">BẮT ĐẦU THỬ THÁCH</button>
+<div class="app-container" id="main-app">
+    <div id="start-screen" style="text-align: center; margin-top: 20vh;">
+        <h2 style="font-size: 40px; font-weight: 900; margin: 0;">VUNGTAUGO</h2>
+        <p style="color: #666; margin-bottom: 50px;">Hệ thống tracking chuẩn xác 1:1</p>
+        <button class="btn-glow" onclick="initApp()">BỐC THĂM & BẮT ĐẦU</button>
     </div>
 
-    <div id="tracking-screen" style="display:none;">
-        <div id="target-tag" style="color: var(--accent); font-weight: bold; font-size: 14px; margin-bottom: 10px;">MỤC TIÊU: -- MÉT</div>
-        <div style="font-size: 11px; color: #4b5563; letter-spacing: 2px;">BƯỚC CHÂN</div>
-        <div class="step-count" id="steps">0</div>
-        <div class="distance-sub"><span id="display-meters">0</span> m</div>
-        
-        <div id="status-msg" class="status-msg">Đang kiểm tra chuyển động...</div>
-        
-        <div style="margin-top: 20px; font-size: 11px; color: #334155;">
-            GPS xác thực: <span id="gps-verify">0.0</span>m
+    <div id="tracking-screen" style="display: none; width: 100%;">
+        <div class="stats-circle">
+            <svg class="svg-ring">
+                <defs>
+                    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stop-color="#0575e6" />
+                        <stop offset="100%" stop-color="#00ffca" />
+                    </linearGradient>
+                </defs>
+                <circle class="ring-bg" cx="140" cy="140" r="130" />
+                <circle id="progress-bar" class="ring-fill" cx="140" cy="140" r="130" />
+            </svg>
+            <div class="big-data">
+                <p id="label-type">Steps</p>
+                <h1 id="main-num">0</h1>
+                <div style="color: var(--p); font-weight: 700; margin-top: 10px;">
+                    <span id="meters-txt">0</span> / <span id="target-txt">0</span> M
+                </div>
+            </div>
+        </div>
+
+        <div class="info-bar">
+            <div class="card">
+                <span>GPS Accuracy</span>
+                <b id="gps-acc">--</b>
+            </div>
+            <div class="card">
+                <span>Trạng thái</span>
+                <b id="status-txt" style="font-size: 14px;">Đang tìm GPS...</b>
+            </div>
         </div>
     </div>
 
-    <div id="finish-screen" style="display:none;">
-        <h2 style="color: var(--primary);">THÀNH CÔNG!</h2>
-        <div style="background: white; padding: 15px; border-radius: 20px; display: inline-block;">
-            <img id="qr-final" src="">
-            <p id="gift-code" style="color: #000; font-weight: 800; margin: 10px 0 0;"></p>
+    <div id="finish-screen">
+        <h1 style="font-size: 32px; color: var(--p);">THÀNH CÔNG!</h1>
+        <p style="color: #666;">Bạn đã di chuyển thực tế xuất sắc.</p>
+        <div class="qr-box">
+            <img id="qr-code" src="" style="width: 200px; height: 200px;">
         </div>
-        <p style="font-size: 12px; color: #64748b; margin-top: 15px;">Vui lòng đưa mã cho nhân viên</p>
+        <h2 id="final-id" style="margin-top: 15px; letter-spacing: 5px;">XXXXX</h2>
+        <button class="btn-glow" style="margin-top: 30px;" onclick="location.reload()">KẾT THÚC</button>
     </div>
 </div>
 
 <script>
-    let state = {
-        target: 20, // Để mặc định 20m cho demo booth
+    let config = {
+        target: 0,
         steps: 0,
-        gpsMeters: 0,
-        startLat: null,
-        startLon: null,
-        lastLat: null,
-        lastLon: null,
-        isTracking: false,
-        lastStepTime: 0
+        distance: 0,
+        isLive: false,
+        lastLat: null, lastLon: null,
+        startLat: null, startLon: null,
+        lastStepTime: 0,
+        lastG: 9.8
     };
 
-    async function requestPermissions() {
-        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-            try { await DeviceMotionEvent.requestPermission(); } catch (e) {}
-        }
-        navigator.geolocation.getCurrentPosition((pos) => {
-            state.startLat = pos.coords.latitude;
-            state.startLon = pos.coords.longitude;
-            startApp();
-        }, () => alert("Vui lòng bật GPS để app xác thực bạn có di chuyển thật không!"));
-    }
-
-    function startApp() {
-        document.getElementById('start-screen').style.display = 'none';
-        document.getElementById('tracking-screen').style.display = 'block';
-        document.getElementById('target-tag').innerText = `MỤC TIÊU: ${state.target} MÉT`;
-        state.isTracking = true;
-        initMotion();
-        initGPS();
-    }
-
-    function initMotion() {
-        window.addEventListener('devicemotion', (event) => {
-            if (!state.isTracking) return;
-            let acc = event.accelerationIncludingGravity;
-            let gForce = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
-            let now = Date.now();
-
-            // CHỐNG QUƠ TAY: Nếu lực lắc > 25 (quá mạnh), coi như gian lận
-            if (gForce > 25) {
-                showWarning("Vui lòng không lắc điện thoại!");
-                return;
-            }
-
-            // Đếm bước khi lực từ 12 đến 20 (đi bộ tự nhiên)
-            if (gForce > 12.5 && gForce < 20 && (now - state.lastStepTime > 350)) {
-                state.steps++;
-                state.lastStepTime = now;
-                updateUI();
-            }
+    function initApp() {
+        const targets = [15, 25, 35];
+        config.target = targets[Math.floor(Math.random() * targets.length)];
+        
+        // Cấp quyền GPS và Motion cùng lúc
+        Promise.all([
+            new Promise(res => navigator.geolocation.getCurrentPosition(res, res)),
+            (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') 
+                ? DeviceMotionEvent.requestPermission() : Promise.resolve('granted')
+        ]).then(() => {
+            startTracking();
         });
     }
 
-    function initGPS() {
+    function startTracking() {
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('tracking-screen').style.display = 'block';
+        document.getElementById('target-txt').innerText = config.target;
+        config.isLive = true;
+
+        // Cảm biến Gia tốc (Đếm bước)
+        window.addEventListener('devicemotion', (e) => {
+            if (!config.isLive) return;
+            let acc = e.accelerationIncludingGravity;
+            if (!acc || acc.x === null) return;
+
+            let g = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+            let delta = Math.abs(g - config.lastG);
+            let now = Date.now();
+
+            // Lọc nhạy: 2.3 là mức cầm tay đi bộ, 350ms là nhịp bước
+            if (delta > 2.3 && (now - config.lastStepTime > 350)) {
+                if (g < 25) { // Chống lắc quá mạnh (gian lận)
+                    config.steps++;
+                    updateUI();
+                    config.lastStepTime = now;
+                }
+            }
+            config.lastG = g;
+        });
+
+        // Định vị GPS (Từng mét một)
         navigator.geolocation.watchPosition((pos) => {
             const { latitude, longitude, accuracy } = pos.coords;
-            if (accuracy > 35) return;
+            document.getElementById('gps-acc').innerText = `±${Math.round(accuracy)}m`;
 
-            if (state.lastLat !== null) {
-                let d = calculateDistance(state.lastLat, state.lastLon, latitude, longitude);
-                if (d > 0.7 && d < 15) {
-                    state.gpsMeters += d;
+            if (accuracy > 30) {
+                document.getElementById('status-txt').innerText = "Sóng yếu ⚠️";
+                return;
+            }
+
+            document.getElementById('status-txt').innerText = "Ổn định ✅";
+
+            // Lưu điểm bắt đầu để kiểm tra chống gian lận tại chỗ
+            if (!config.startLat) {
+                config.startLat = latitude;
+                config.startLon = longitude;
+            }
+
+            if (config.lastLat !== null) {
+                let d = getDistance(config.lastLat, config.lastLon, latitude, longitude);
+                // Chỉ cộng mét khi di chuyển thực tế (0.8m - 15m giữa 2 lần quét)
+                if (d > 0.8 && d < 15) {
+                    config.distance += d;
                     updateUI();
                 }
             }
-            state.lastLat = latitude;
-            state.lastLon = longitude;
-            document.getElementById('gps-verify').innerText = state.gpsMeters.toFixed(1);
-        }, null, { enableHighAccuracy: true });
+            config.lastLat = latitude;
+            config.lastLon = longitude;
+        }, null, { enableHighAccuracy: true, maximumAge: 0 });
     }
 
-    function updateUI() {
-        // CÔNG THỨC CHỐNG GIAN LẬN:
-        // Số mét hiển thị = 70% từ bước chân + 30% từ GPS thực tế
-        // Điều này bắt buộc GPS phải nhảy thì số mét mới tăng mượt được
-        let stepMeters = state.steps * 0.7;
-        let displayMeters = Math.floor((stepMeters * 0.7) + (state.gpsMeters * 0.3));
-        
-        document.getElementById('steps').innerText = state.steps;
-        document.getElementById('display-meters').innerText = displayMeters;
-
-        // KIỂM TRA CUỐI CÙNG: 
-        // Phải đủ số mét HIỂN THỊ VÀ GPS thực tế phải dịch chuyển ít nhất 5m so với điểm bắt đầu
-        if (displayMeters >= state.target) {
-            let realDistFromStart = calculateDistance(state.startLat, state.startLon, state.lastLat, state.lastLon);
-            
-            if (realDistFromStart < 5) {
-                showWarning("Hãy di chuyển thực tế để nhận quà!");
-            } else {
-                finish();
-            }
-        }
-    }
-
-    function showWarning(msg) {
-        let el = document.getElementById('status-msg');
-        el.innerText = msg;
-        el.classList.add('warning');
-        setTimeout(() => el.classList.remove('warning'), 1000);
-    }
-
-    function calculateDistance(lat1, lon1, lat2, lon2) {
+    function getDistance(lat1, lon1, lat2, lon2) {
         const R = 6371000;
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
@@ -161,14 +205,41 @@
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    function finish() {
-        state.isTracking = false;
+    function updateUI() {
+        // Đồng bộ logic: Ưu tiên GPS, lấy Bước chân để làm mượt hiển thị
+        let stepDist = config.steps * 0.75;
+        let displayMeters = Math.max(Math.floor(config.distance), Math.floor(stepDist * 0.8 + config.distance * 0.2));
+        
+        document.getElementById('main-num').innerText = config.steps;
+        document.getElementById('meters-txt').innerText = displayMeters;
+
+        // Cập nhật vòng tròn tiến trình (Dashoffset: 816 -> 0)
+        let pct = Math.min(displayMeters / config.target, 1);
+        document.getElementById('progress-bar').style.strokeDashoffset = 816 - (pct * 816);
+
+        // Kiểm tra hoàn thành
+        if (displayMeters >= config.target && config.isLive) {
+            // Xác thực cuối: Khoảng cách từ điểm đầu đến điểm cuối phải > 5m
+            let finalCheck = getDistance(config.startLat, config.startLon, config.lastLat, config.lastLon);
+            if (finalCheck > 5) {
+                finishApp();
+            } else {
+                document.getElementById('status-txt').innerText = "Hãy đi xa hơn!";
+                document.getElementById('status-txt').style.color = "#ff4444";
+            }
+        }
+    }
+
+    function finishApp() {
+        config.isLive = false;
+        const giftID = Math.random().toString(36).substr(2, 6).toUpperCase();
         document.getElementById('tracking-screen').style.display = 'none';
         document.getElementById('finish-screen').style.display = 'block';
-        const code = "VTAU-" + Math.random().toString(36).substr(2, 5).toUpperCase();
-        document.getElementById('gift-code').innerText = code;
-        document.getElementById('qr-final').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${code}`;
-        Swal.fire({ title: 'XÁC THỰC THÀNH CÔNG!', text: 'Bạn đã di chuyển thực tế. Nhận quà ngay!', icon: 'success' });
+        document.getElementById('final-id').innerText = giftID;
+        document.getElementById('qr-code').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VERIFIED_${giftID}`;
+        
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+        Swal.fire({ title: 'HOÀN THÀNH!', text: 'Mã xác thực: ' + giftID, icon: 'success', confirmButtonColor: '#00ffca' });
     }
 </script>
 </body>
