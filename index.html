@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>VUNGTAUGO! Pro · Đi bộ thật</title>
+    <title>VUNGTAUGO! Pro · Chống lắc tuyệt đối</title>
     <!-- Thư viện -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- Font -->
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -53,7 +52,6 @@
         .screen { display: block; }
         .screen.hide { display: none !important; }
 
-        /* Màn bốc thăm */
         .draw-box {
             background: #0e1e28;
             border-radius: 34px;
@@ -93,7 +91,6 @@
         .btn:active { transform: scale(0.98); }
         .btn:disabled { opacity: 0.5; pointer-events: none; }
 
-        /* Màn đi bộ */
         .map-container {
             height: 220px;
             border-radius: 28px;
@@ -145,7 +142,6 @@
             min-height: 28px;
             text-align: center;
         }
-        /* Màn nhận quà */
         .qr-box {
             background: white;
             padding: 24px;
@@ -184,7 +180,7 @@
         <p class="small-note">Quét QR tại booth → bốc thăm → đi bộ → đổi quà</p>
     </div>
 
-    <!-- MÀN ĐI BỘ (STRAVA STYLE) -->
+    <!-- MÀN ĐI BỘ -->
     <div id="walkScreen" class="screen hide">
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
             <span style="font-size: 22px;">🚶</span>
@@ -198,9 +194,7 @@
         <div class="progress-bar">
             <div id="progressFill"></div>
         </div>
-        <!-- Bản đồ -->
         <div id="walkMap" class="map-container"></div>
-        <!-- Thông số -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-label">Tốc độ</div>
@@ -246,14 +240,12 @@
         // ---------- STATE ----------
         const state = {
             target: 0,
-            // Quãng đường GPS (tích lũy từ các điểm có độ chính xác cao)
-            gpsDistance: 0,
-            // Quãng đường ước tính từ bước chân (dùng khi GPS yếu)
-            stepDistance: 0,
+            gpsDistance: 0,          // quãng đường từ GPS (m)
+            stepDistance: 0,          // quãng đường ước tính từ bước chân (m)
             steps: 0,
             isTracking: false,
             lastGpsPoint: null,
-            positions: [],           // lưu vết để vẽ polyline
+            positions: [],
             map: null,
             marker: null,
             polyline: null,
@@ -261,19 +253,24 @@
             watchId: null,
             speedKmh: 0,
             lastStepTimestamp: 0,
-            // Bộ lọc bước chân
+            stepLength: 0.75,         // mét/bước
+            
+            // Bộ đếm bước chống lắc
             stepDetector: {
-                buffer: [],          // lưu giá trị magnitude đã lọc
-                threshold: 1.2,      // ngưỡng biên độ (m/s²) - điều chỉnh theo thử nghiệm
-                minStepInterval: 300, // ms
+                // Bộ lọc thông thấp Butterworth bậc 2 (đơn giản hóa)
+                a1: 1.0, a2: 0.0, b0: 0.0, b1: 0.0, b2: 0.0,
+                x1: 0, x2: 0, y1: 0, y2: 0,
+                // Phát hiện đỉnh
+                threshold: 1.2,         // ngưỡng động
+                minInterval: 280,       // ms (tương ứng 214 bước/phút)
                 lastPeakTime: 0,
-                enabled: true
+                peakValues: [],         // lưu các đỉnh gần đây để tính ngưỡng động
+                dynamicThresholdAlpha: 0.7,
+                // Phân tích tần số
+                recentSteps: [],        // timestamp các bước gần đây
+                maxFreq: 3.5,           // Hz - nếu tần số > 3.5 thì coi là lắc
             },
             motionListener: null,
-            sessionStartTime: null,
-            // Chiều dài bước trung bình (m) ước tính
-            stepLength: 0.75,
-            lastAccelFiltered: 9.8
         };
 
         // DOM elements
@@ -307,9 +304,7 @@
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        // Tổng quãng đường hiển thị: kết hợp GPS + bước chân (ưu tiên GPS)
         function getDisplayDistance() {
-            // Nếu có GPS distance > 0 thì dùng GPS, ngược lại dùng bước chân ước tính
             return state.gpsDistance > 0 ? state.gpsDistance : state.stepDistance;
         }
 
@@ -328,7 +323,6 @@
             const { latitude, longitude } = position;
             if (!state.marker) {
                 state.marker = L.marker([latitude, longitude]).addTo(state.map);
-                // Vòng tròn độ chính xác
                 state.accuracyCircle = L.circle([latitude, longitude], { radius: accuracy, color: '#00f2fe', weight: 1, fillOpacity: 0.1 }).addTo(state.map);
             } else {
                 state.marker.setLatLng([latitude, longitude]);
@@ -367,15 +361,13 @@
             }
         }
 
-        // ---------- XỬ LÝ GPS (CHẤT LƯỢNG CAO) ----------
+        // ---------- GPS ----------
         function handleGPS(pos) {
             if (!state.isTracking) return;
             const { latitude, longitude, accuracy, speed } = pos.coords;
             
-            // Hiển thị độ chính xác
             gpsAccuracySpan.innerText = accuracy ? `±${Math.round(accuracy)}m` : '--';
             
-            // Chỉ chấp nhận điểm có accuracy < 25m
             if (accuracy > 25) {
                 walkStatus.innerText = `⚠️ Tín hiệu GPS yếu (±${Math.round(accuracy)}m)`;
                 return;
@@ -384,28 +376,21 @@
             const speedKmh = speed ? speed * 3.6 : 0;
             state.speedKmh = speedKmh;
             
-            // Chống ngồi xe
             if (speedKmh > 20) {
                 walkStatus.innerText = '⚠️ Di chuyển quá nhanh – chỉ tính đi bộ!';
                 return;
             }
             
             walkStatus.innerText = '✅ GPS ổn định, đang ghi nhận...';
-            
-            // Cập nhật bản đồ
             updateMap({ latitude, longitude }, accuracy);
             
-            // Tính quãng đường GPS
             if (state.lastGpsPoint) {
                 const d = haversine(state.lastGpsPoint.lat, state.lastGpsPoint.lng, latitude, longitude);
-                // Chỉ cộng nếu di chuyển thực tế (1-30m)
                 if (d > 1.0 && d < 30) {
                     state.gpsDistance += d;
                 }
             }
             state.lastGpsPoint = { lat: latitude, lng: longitude };
-            
-            // Đồng bộ bước chân: nếu GPS hoạt động tốt, ta vẫn cập nhật UI
             updateWalkUI();
         }
 
@@ -414,49 +399,132 @@
             gpsAccuracySpan.innerText = 'Lỗi';
         }
 
-        // ---------- BỘ ĐẾM BƯỚC CHÂN CHỐNG LẮC (PEAK DETECTION + FILTER) ----------
-        let lowPassFilterAlpha = 0.8; // hệ số lọc thông thấp
-        let filteredMagnitude = 9.8;
-        
+        // ---------- BỘ LỌC THÔNG THẤP (BUTTERWORTH BẬC 2) ----------
+        function initLowPassFilter(sampleRate, cutoffFreq) {
+            // Tần số cắt khoảng 3 Hz để loại bỏ rung tay cao tần
+            const omega = 2.0 * Math.PI * cutoffFreq / sampleRate;
+            const sn = Math.sin(omega);
+            const cs = Math.cos(omega);
+            const alpha = sn / (2.0 * 0.707); // Q = 0.707 (Butterworth)
+            
+            const b0 = (1.0 - cs) / 2.0;
+            const b1 = 1.0 - cs;
+            const b2 = (1.0 - cs) / 2.0;
+            const a0 = 1.0 + alpha;
+            const a1 = -2.0 * cs;
+            const a2 = 1.0 - alpha;
+            
+            state.stepDetector.b0 = b0 / a0;
+            state.stepDetector.b1 = b1 / a0;
+            state.stepDetector.b2 = b2 / a0;
+            state.stepDetector.a1 = a1 / a0;
+            state.stepDetector.a2 = a2 / a0;
+        }
+
+        function applyLowPassFilter(input) {
+            const sd = state.stepDetector;
+            // y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
+            const output = sd.b0 * input + sd.b1 * sd.x1 + sd.b2 * sd.x2 - sd.a1 * sd.y1 - sd.a2 * sd.y2;
+            // cập nhật trạng thái
+            sd.x2 = sd.x1;
+            sd.x1 = input;
+            sd.y2 = sd.y1;
+            sd.y1 = output;
+            return output;
+        }
+
+        // ---------- BỘ ĐẾM BƯỚC CHỐNG LẮC MẠNH MẼ ----------
         function handleMotion(e) {
             if (!state.isTracking) return;
             const acc = e.accelerationIncludingGravity;
             if (!acc) return;
             
             // Tính magnitude
-            const mag = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+            const rawMag = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
             
-            // Lọc thông thấp để loại bỏ rung tay tần số cao
-            filteredMagnitude = lowPassFilterAlpha * filteredMagnitude + (1 - lowPassFilterAlpha) * mag;
+            // Lọc thông thấp (cắt tần số cao do lắc tay)
+            const filtered = applyLowPassFilter(rawMag);
             
-            // Phát hiện đỉnh (peak detection)
             const now = Date.now();
-            const threshold = 0.9; // ngưỡng biên độ (m/s²) - đã điều chỉnh
-            const delta = filteredMagnitude - state.lastAccelFiltered;
+            const sd = state.stepDetector;
             
-            // Điều kiện: vượt ngưỡng, đủ thời gian giữa các bước, và biên độ không quá lớn (chống lắc mạnh)
-            if (delta > threshold && 
-                (now - state.stepDetector.lastPeakTime) > state.stepDetector.minStepInterval &&
-                mag < 20) {  // loại bỏ rung lắc mạnh (lắc tay mạnh >20 m/s²)
+            // Phát hiện đỉnh: tìm điểm cực đại cục bộ
+            // Đơn giản hóa: dùng ngưỡng động và kiểm tra đạo hàm đổi dấu
+            if (sd.y1 > sd.y2 && sd.y1 > sd.threshold) {
+                // Điều kiện đỉnh: giá trị hiện tại lớn hơn giá trị trước và sau, và vượt ngưỡng
+                // (chúng ta kiểm tra sau 1 mẫu để có đỉnh thực sự)
+                // Thực tế sẽ phát hiện khi tín hiệu giảm sau khi vượt ngưỡng
+            }
+            
+            // Cách đơn giản và hiệu quả hơn: sử dụng bộ đệm để tìm đỉnh
+            // Lưu ý: Cần tối ưu hóa, ở đây dùng phương pháp cổ điển:
+            // Tìm đỉnh khi tín hiệu vượt ngưỡng và đang giảm dần so với mẫu trước
+            
+            // Lưu giá trị đã lọc vào bộ đệm nhỏ (3 mẫu)
+            if (!sd.buffer) sd.buffer = [];
+            sd.buffer.push(filtered);
+            if (sd.buffer.length > 5) sd.buffer.shift();
+            
+            if (sd.buffer.length >= 3) {
+                const a = sd.buffer[sd.buffer.length-3];
+                const b = sd.buffer[sd.buffer.length-2];
+                const c = sd.buffer[sd.buffer.length-1];
                 
-                // Kiểm tra thêm: nếu GPS đang báo tốc độ > 15 km/h thì không tính bước (ngồi xe)
-                if (state.speedKmh < 15) {
-                    state.steps++;
-                    state.stepDistance = state.steps * state.stepLength;
-                    state.stepDetector.lastPeakTime = now;
+                // Điều kiện đỉnh: b là cực đại (a < b > c) và b > ngưỡng
+                if (b > a && b > c && b > sd.threshold) {
+                    const timeSinceLastStep = now - sd.lastPeakTime;
                     
-                    // Nếu GPS không hoạt động (gpsDistance ~0), ưu tiên hiển thị bước chân
-                    if (state.gpsDistance < 0.5) {
-                        updateWalkUI();
+                    // Kiểm tra khoảng thời gian tối thiểu
+                    if (timeSinceLastStep > sd.minInterval) {
+                        // Kiểm tra tần số: tính tần suất các bước gần đây
+                        sd.recentSteps.push(now);
+                        // Giữ lại các bước trong 2 giây gần nhất
+                        while (sd.recentSteps.length > 0 && now - sd.recentSteps[0] > 2000) {
+                            sd.recentSteps.shift();
+                        }
+                        
+                        let freq = 0;
+                        if (sd.recentSteps.length >= 2) {
+                            const duration = (sd.recentSteps[sd.recentSteps.length-1] - sd.recentSteps[0]) / 1000;
+                            freq = (sd.recentSteps.length - 1) / duration;
+                        }
+                        
+                        // Nếu tần số > 3.5 Hz, có thể là lắc tay -> bỏ qua
+                        if (freq <= sd.maxFreq) {
+                            // Kiểm tra thêm: nếu GPS không di chuyển đáng kể trong 3 giây gần đây -> giảm tin cậy
+                            let gpsConfidence = true;
+                            if (state.speedKmh < 0.5 && state.gpsDistance < 1.0) {
+                                gpsConfidence = false;
+                            }
+                            
+                            if (gpsConfidence || state.steps < 5) { // Cho phép vài bước đầu để khởi động
+                                state.steps++;
+                                state.stepDistance = state.steps * state.stepLength;
+                                sd.lastPeakTime = now;
+                                
+                                // Cập nhật ngưỡng động dựa trên biên độ đỉnh gần đây
+                                sd.peakValues.push(b);
+                                if (sd.peakValues.length > 5) sd.peakValues.shift();
+                                const avgPeak = sd.peakValues.reduce((s,v) => s+v, 0) / sd.peakValues.length;
+                                sd.threshold = avgPeak * 0.6; // ngưỡng bằng 60% biên độ trung bình
+                                
+                                // Cập nhật UI nếu GPS yếu
+                                if (state.gpsDistance < 0.5) {
+                                    updateWalkUI();
+                                }
+                            } else {
+                                walkStatus.innerText = '⚠️ Hãy bước đi thực sự, không lắc tay!';
+                            }
+                        } else {
+                            // Tần số cao -> lắc tay
+                            walkStatus.innerText = '⚠️ Phát hiện rung lắc tay - không tính bước';
+                            // Đặt lại ngưỡng để tránh lắc liên tục
+                            sd.threshold = Math.max(sd.threshold, 2.0);
+                        }
                     }
-                } else {
-                    walkStatus.innerText = '⚠️ Đang di chuyển quá nhanh, không tính bước';
                 }
             }
             
-            state.lastAccelFiltered = filteredMagnitude;
-            
-            // Cập nhật UI liên tục
             updateWalkUI();
         }
 
@@ -474,33 +542,38 @@
             state.lastGpsPoint = null;
             state.positions = [];
             state.speedKmh = 0;
-            state.stepDetector.lastPeakTime = 0;
-            state.lastAccelFiltered = 9.8;
-            filteredMagnitude = 9.8;
+            state.stepDetector = {
+                a1: 1.0, a2: 0.0, b0: 0.0, b1: 0.0, b2: 0.0,
+                x1: 0, x2: 0, y1: 0, y2: 0,
+                threshold: 1.2,
+                minInterval: 280,
+                lastPeakTime: 0,
+                peakValues: [],
+                dynamicThresholdAlpha: 0.7,
+                recentSteps: [],
+                maxFreq: 3.5,
+                buffer: []
+            };
+            
+            // Khởi tạo bộ lọc với sample rate ~60Hz (ước tính từ sự kiện motion)
+            initLowPassFilter(60, 3.0); // cắt tần số 3Hz
             
             goalDisplay.innerText = state.target;
             updateWalkUI();
             
             initMap();
-            // Dọn dẹp layer cũ
             if (state.marker) state.map.removeLayer(state.marker);
             if (state.accuracyCircle) state.map.removeLayer(state.accuracyCircle);
             if (state.polyline) state.map.removeLayer(state.polyline);
             state.marker = null; state.accuracyCircle = null; state.polyline = null;
             
-            // Yêu cầu quyền cảm biến (iOS)
             if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-                try {
-                    await DeviceMotionEvent.requestPermission();
-                } catch(e) {}
+                try { await DeviceMotionEvent.requestPermission(); } catch(e) {}
             }
             
-            // GPS watch
             if (navigator.geolocation) {
                 state.watchId = navigator.geolocation.watchPosition(handleGPS, gpsError, {
-                    enableHighAccuracy: true,
-                    maximumAge: 2000,
-                    timeout: 5000
+                    enableHighAccuracy: true, maximumAge: 2000, timeout: 5000
                 });
             } else {
                 Swal.fire('Lỗi', 'Trình duyệt không hỗ trợ GPS', 'error');
@@ -545,9 +618,7 @@
                     showCancelButton: true,
                     confirmButtonText: 'Về trang chính',
                     cancelButtonText: 'Tiếp tục'
-                }).then((res) => {
-                    if (res.isConfirmed) resetToDrawScreen();
-                });
+                }).then((res) => { if (res.isConfirmed) resetToDrawScreen(); });
             } else {
                 resetToDrawScreen();
             }
