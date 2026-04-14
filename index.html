@@ -59,7 +59,7 @@
 
         <div class="status">
             <div id="status-dot" class="dot"></div>
-            <span id="status-text">Đang đợi dữ liệu cảm biến...</span>
+            <span id="status-text">Đang kết nối GPS...</span>
         </div>
     </div>
 </div>
@@ -69,18 +69,31 @@
         steps: 0,
         meters: 0,
         target: 0,
-        lastAcc: 0,
         lastMag: 0,
         isTracking: false,
         lastLat: null,
         lastLon: null
     };
 
-    // 1. Cấp quyền cảm biến (Bắt buộc cho iOS 13+)
     async function requestPermissions() {
-        if (typeof DeviceMotionEvent.requestPermission === 'function') {
-            const permission = await DeviceMotionEvent.requestPermission();
-            if (permission !== 'granted') return alert("Bạn cần cho phép truy cập cảm biến để đếm bước!");
+        // Cấp quyền GPS trước
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(() => {
+                console.log("GPS ok");
+            }, (err) => {
+                alert("Lỗi: Bạn chưa bật định vị trên điện thoại hoặc trình duyệt.");
+            });
+        }
+
+        // Cấp quyền Cảm biến (iOS 13+)
+        if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            try {
+                const permission = await DeviceMotionEvent.requestPermission();
+                if (permission !== 'granted') {
+                    alert("Cần quyền cảm biến để đếm bước chân!");
+                    return;
+                }
+            } catch (e) { console.error(e); }
         }
         startChallenge();
     }
@@ -97,17 +110,16 @@
         initGPS();
     }
 
-    // 2. Đếm bước chân bằng Gia tốc kế (Accelerometer)
     function initMotion() {
         window.addEventListener('devicemotion', (event) => {
             if (!state.isTracking) return;
-            
             let acc = event.accelerationIncludingGravity;
-            let magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+            if(!acc.x) return; // Chống lỗi cảm biến rỗng
             
-            // Thuật toán đếm bước: Nhận diện đỉnh dao động (Peak detection)
+            let magnitude = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
             let delta = Math.abs(magnitude - state.lastMag);
-            if (delta > 3) { // Ngưỡng lực của 1 bước đi bộ
+            
+            if (delta > 3.5) { // Ngưỡng đếm bước tối ưu
                 state.steps++;
                 document.getElementById('steps').innerText = state.steps;
             }
@@ -115,31 +127,44 @@
         });
     }
 
-    // 3. Đo quãng đường bằng GPS độ chính xác cao
     function initGPS() {
+        // Option "Siêu xịn" cho độ ổn định cao nhất
+        const geoOptions = {
+            enableHighAccuracy: true,
+            maximumAge: 0,
+            timeout: 10000
+        };
+
         navigator.geolocation.watchPosition((pos) => {
             const { latitude, longitude, accuracy } = pos.coords;
             document.getElementById('acc').innerText = Math.round(accuracy);
-
-            if (accuracy > 30) {
-                document.getElementById('status-text').innerText = "GPS yếu, hãy di chuyển...";
+            
+            // Nếu sai số quá 40m, GPS đang rất nhiễu -> Không tính mét để tránh nhảy ảo
+            if (accuracy > 40) {
+                document.getElementById('status-text').innerText = "Đang tìm tín hiệu tốt hơn...";
                 return;
             }
 
-            document.getElementById('status-text').innerText = "Đang đồng bộ cảm biến...";
+            document.getElementById('status-text').innerText = "Tín hiệu ổn định ✅";
 
-            if (state.lastLat) {
+            if (state.lastLat !== null && state.lastLon !== null) {
                 let d = calculateDistance(state.lastLat, state.lastLon, latitude, longitude);
-                // Chỉ tính nếu đi trên 2m và dưới 20m (chống nhiễu & chống đi xe)
-                if (d > 2 && d < 20) {
+                
+                // CHỐNG NHẢY SỐ: Chỉ tính nếu di chuyển từ 1.5m đến 25m
+                if (d > 1.5 && d < 25) {
                     state.meters += d;
                     document.getElementById('meters').innerText = Math.floor(state.meters);
                     checkWin();
                 }
             }
+            
+            // Luôn cập nhật tọa độ cuối cùng để so sánh
             state.lastLat = latitude;
             state.lastLon = longitude;
-        }, null, { enableHighAccuracy: true, maximumAge: 0 });
+            
+        }, (err) => {
+            document.getElementById('status-text').innerText = "GPS Error: " + err.code;
+        }, geoOptions);
     }
 
     function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -154,14 +179,13 @@
         if (state.meters >= state.target) {
             state.isTracking = false;
             Swal.fire({
-                title: 'THÀNH CÔNG!',
-                html: `Bạn đã đi được <b>${Math.floor(state.meters)}m</b> (~${state.steps} bước).<br>Đưa màn hình cho nhân viên để nhận quà!`,
+                title: 'HOÀN THÀNH!',
+                html: `Bạn đã đi được <b>${Math.floor(state.meters)}m</b>.<br>Nhận quà tại quầy ngay!`,
                 icon: 'success',
-                confirmButtonText: 'NHẬN QUÀ'
+                confirmButtonText: 'XÁC NHẬN'
             });
         }
     }
 </script>
-
 </body>
 </html>
