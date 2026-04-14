@@ -1,203 +1,286 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>VUNGTAUGO! Pro</title>
+    <title>VUNGTAUGO! Apex</title>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
-        :root { --primary: #00f2fe; --secondary: #4facfe; --bg: #050a14; --card: rgba(30, 41, 59, 0.7); --danger: #ff4d4d; }
-        body { 
-            margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; 
-            background: radial-gradient(circle at top, #1e293b, #050a14);
-            color: #fff; height: 100vh; display: flex; align-items: center; justify-content: center;
+        :root { --bg: #0a0a0a; --surface: rgba(25, 25, 25, 0.6); --brand: #fc4c02; --brand-glow: rgba(252, 76, 2, 0.4); --text: #f5f5f5; --sub: #888; --danger: #ef4444; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Manrope', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { background: var(--bg); color: var(--text); height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+        
+        .glass-panel {
+            width: 92%; max-width: 400px; background: var(--surface); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 32px; padding: 40px 24px;
+            box-shadow: 0 30px 60px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.1);
+            position: relative; transition: all 0.3s ease;
         }
-        .container { 
-            width: 90%; max-width: 380px; background: var(--card); border-radius: 35px; 
-            padding: 30px; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(15px);
-            text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+
+        /* Anti-Cheat Warning State */
+        .glass-panel.locked { border-color: var(--danger); box-shadow: 0 0 40px rgba(239, 68, 68, 0.2); }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .tag { background: rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 800; letter-spacing: 1px; color: var(--sub); text-transform: uppercase; }
+        .live-dot { width: 8px; height: 8px; background: #22c55e; border-radius: 50%; box-shadow: 0 0 10px #22c55e; animation: pulse 2s infinite; }
+
+        .metric-hero { text-align: center; margin: 40px 0; }
+        .metric-label { font-size: 14px; color: var(--sub); font-weight: 600; text-transform: uppercase; letter-spacing: 2px; }
+        .metric-value { font-size: 96px; font-weight: 800; line-height: 1; letter-spacing: -3px; margin: 5px 0; text-shadow: 0 0 40px rgba(255,255,255,0.1); }
+        .metric-unit { font-size: 24px; color: var(--brand); font-weight: 800; }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 40px; }
+        .stat-box { background: rgba(0,0,0,0.4); border-radius: 20px; padding: 16px; border: 1px solid rgba(255,255,255,0.03); }
+        .stat-box .val { font-size: 24px; font-weight: 800; }
+
+        .btn-brand {
+            background: var(--brand); color: #fff; width: 100%; border: none; padding: 22px; border-radius: 24px;
+            font-size: 18px; font-weight: 800; letter-spacing: 1px; cursor: pointer; transition: 0.2s;
+            box-shadow: 0 10px 30px var(--brand-glow); text-transform: uppercase;
         }
-        .step-txt { font-size: 85px; font-weight: 800; line-height: 1; margin: 10px 0; background: linear-gradient(#fff, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .meter-sub { font-size: 24px; color: var(--primary); font-weight: 600; margin-bottom: 20px; }
-        .btn { 
-            background: linear-gradient(135deg, var(--secondary), var(--primary)); 
-            border: none; color: #fff; padding: 20px; border-radius: 20px; 
-            width: 100%; font-size: 18px; font-weight: 800; cursor: pointer;
-        }
-        .status-box { 
-            margin-top: 20px; padding: 12px; border-radius: 15px; background: rgba(0,0,0,0.2);
-            font-size: 11px; color: #94a3b8; min-height: 50px;
-        }
-        .warning { color: var(--danger) !important; font-weight: bold; }
-        .progress-bg { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 10px; margin: 20px 0; overflow: hidden; }
-        #progress-fill { width: 0%; height: 100%; background: var(--primary); transition: 0.4s; }
+        .btn-brand:active { transform: translateY(2px); box-shadow: 0 5px 15px var(--brand-glow); }
+
+        .warning-msg { display: none; color: var(--danger); font-size: 12px; font-weight: 800; text-align: center; margin-top: 15px; text-transform: uppercase; letter-spacing: 1px; }
+        .locked .warning-msg { display: block; animation: shake 0.4s; }
+
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+        #ui-tracking, #ui-finish { display: none; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div id="start-screen">
-        <h1 style="margin:0">VUNGTAUGO!</h1>
-        <p style="color:#64748b; margin-bottom:30px">Xác thực di chuyển thực tế 1:1</p>
-        <div style="background:rgba(255,255,255,0.05); padding:20px; border-radius:20px; margin-bottom:25px">
-            <span style="font-size:12px; color:#475569">MỤC TIÊU BỐC THĂM</span>
-            <div id="target-draw" style="font-size:28px; font-weight:800; color:var(--primary)">?? MÉT</div>
-        </div>
-        <button class="btn" id="main-btn" onclick="handleStart()">BỐC THĂM</button>
+<div class="glass-panel" id="panel">
+    
+    <div id="ui-start" style="text-align: center;">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 20px;"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+        <h1 style="font-size: 32px; font-weight: 800; margin-bottom: 10px;">VUNGTAUGO</h1>
+        <p style="color: var(--sub); font-size: 15px; margin-bottom: 40px; line-height: 1.5;">Pro-grade activity tracking.<br>Zero bullshit. Start moving.</p>
+        <button class="btn-brand" onclick="initApp()">START TRACKING</button>
     </div>
 
-    <div id="track-screen" style="display:none">
-        <div style="font-size:12px; letter-spacing:2px; color:#64748b">BƯỚC CHÂN</div>
-        <div class="step-txt" id="steps">0</div>
-        <div class="meter-sub"><span id="meters">0</span> / <span id="goal">0</span> m</div>
-        <div class="progress-bg"><div id="progress-fill"></div></div>
-        <div class="status-box">
-            <div id="msg">Đang khởi tạo GPS...</div>
-            <div id="debug" style="font-size:9px; margin-top:5px; opacity:0.5">Vận tốc: 0 km/h</div>
+    <div id="ui-tracking">
+        <div class="header">
+            <div class="tag" id="goal-tag">TARGET: --M</div>
+            <div class="live-dot" id="gps-indicator"></div>
         </div>
+
+        <div class="metric-hero">
+            <div class="metric-label">DISTANCE</div>
+            <div class="metric-value" id="display-dist">0</div>
+            <div class="metric-unit">METERS</div>
+        </div>
+
+        <div class="grid-2">
+            <div class="stat-box">
+                <div class="metric-label" style="font-size: 11px;">CADENCE</div>
+                <div class="val" id="display-steps">0 <span style="font-size: 12px; color:var(--sub)">STEPS</span></div>
+            </div>
+            <div class="stat-box">
+                <div class="metric-label" style="font-size: 11px;">GPS DELTA</div>
+                <div class="val" id="display-gps">0.0 <span style="font-size: 12px; color:var(--sub)">M</span></div>
+            </div>
+        </div>
+        
+        <div class="warning-msg" id="warning-text">UNNATURAL MOVEMENT DETECTED</div>
     </div>
 
-    <div id="finish-screen" style="display:none">
-        <h2 style="color:var(--primary)">XÁC THỰC THÀNH CÔNG</h2>
-        <div style="background:#fff; padding:15px; border-radius:20px; display:inline-block; margin:15px 0">
-            <img id="qr" src="" style="width:180px">
+    <div id="ui-finish" style="text-align: center;">
+        <h2 style="font-size: 32px; font-weight: 800; color: var(--brand); margin-bottom: 10px;">CRUSHED IT.</h2>
+        <p style="color: var(--sub); margin-bottom: 30px;">Activity verified and synced.</p>
+        <div style="background: #fff; padding: 20px; border-radius: 24px; display: inline-block; margin-bottom: 30px;">
+            <img id="qr-code" src="" style="width: 200px; height: 200px; display: block;">
         </div>
-        <div id="code" style="font-weight:800; letter-spacing:2px; font-size: 20px;"></div>
-        <button class="btn" style="margin-top:20px; background:#334155" onclick="location.reload()">KẾT THÚC</button>
+        <div id="auth-code" style="font-size: 24px; font-weight: 800; letter-spacing: 4px; margin-bottom: 30px;"></div>
+        <button class="btn-brand" style="background: #333; color: #fff; box-shadow: none;" onclick="location.reload()">DONE</button>
     </div>
+
 </div>
 
 <script>
-    let state = {
-        target: 0, steps: 0, 
-        gpsDistance: 0, // Quãng đường GPS tích lũy
-        isLive: false,
-        lastLat: null, lastLon: null,
-        lastStepTime: 0, lastG: 9.8,
-        gpsConfidence: 0 // Điểm tin cậy di chuyển
+    // --- CORE ENGINE ---
+    const ENGINE = {
+        target: 25, // Meters
+        steps: 0,
+        gpsDistance: 0,
+        displayDistance: 0,
+        isActive: false,
+        isCheating: false,
+        
+        // Sensor Vars
+        lastLat: null, lastLon: null, startLat: null, startLon: null,
+        
+        // Filter Vars (Low-pass filter for smooth step detection)
+        accelHistory: [9.8, 9.8, 9.8],
+        lastStepTime: 0,
+        cheatTimeout: null
     };
 
-    function handleStart() {
-        if (state.target === 0) {
-            state.target = [20, 30, 40][Math.floor(Math.random() * 3)];
-            document.getElementById('target-draw').innerText = state.target + " MÉT";
-            document.getElementById('main-btn').innerText = "BẮT ĐẦU DI CHUYỂN";
-        } else {
-            requestPermissions();
-        }
-    }
-
-    async function requestPermissions() {
+    // --- INITIALIZATION ---
+    async function initApp() {
+        ENGINE.target = [20, 30, 40][Math.floor(Math.random() * 3)];
+        
+        // 1. Request Sensors (Required for iOS Safari)
         if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-            await DeviceMotionEvent.requestPermission();
+            try { 
+                const perm = await DeviceMotionEvent.requestPermission();
+                if (perm !== 'granted') throw new Error("Sensor denied");
+            } catch (e) {
+                return Swal.fire("Permission Required", "Allow Motion Sensors to track activity.", "error");
+            }
         }
-        navigator.geolocation.watchPosition(handleGPS, (e) => console.error(e), { enableHighAccuracy: true });
-        startApp();
+
+        // 2. Request GPS
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                ENGINE.startLat = pos.coords.latitude;
+                ENGINE.startLon = pos.coords.longitude;
+                startEngine();
+            },
+            () => Swal.fire("GPS Required", "Location access is mandatory for verification.", "error"),
+            { enableHighAccuracy: true, maximumAge: 0 }
+        );
     }
 
-    function startApp() {
-        document.getElementById('start-screen').style.display = 'none';
-        document.getElementById('track-screen').style.display = 'block';
-        document.getElementById('goal').innerText = state.target;
-        state.isLive = true;
-        window.addEventListener('devicemotion', handleMotion);
+    function startEngine() {
+        document.getElementById('ui-start').style.display = 'none';
+        document.getElementById('ui-tracking').style.display = 'block';
+        document.getElementById('goal-tag').innerText = `TARGET: ${ENGINE.target}M`;
+        
+        ENGINE.isActive = true;
+
+        // Start Listeners
+        window.addEventListener('devicemotion', processMotion);
+        navigator.geolocation.watchPosition(processGPS, null, { enableHighAccuracy: true, maximumAge: 1000 });
+        
+        // Start UI Render Loop (60FPS decoupling)
+        requestAnimationFrame(renderUI);
     }
 
-    function handleMotion(e) {
-        if (!state.isLive) return;
+    // --- SENSOR PROCESSING ---
+    function processMotion(e) {
+        if (!ENGINE.isActive || ENGINE.isCheating) return;
+        
         let acc = e.accelerationIncludingGravity;
-        if (!acc || !acc.x) return;
+        if (!acc || acc.x === null) return;
 
-        let g = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
-        let delta = Math.abs(g - state.lastG);
+        // Calculate raw magnitude
+        let rawG = Math.sqrt(acc.x**2 + acc.y**2 + acc.z**2);
+        
+        // Low-pass filter (Smooths out sharp, unnatural wrist flicks)
+        ENGINE.accelHistory.push(rawG);
+        ENGINE.accelHistory.shift();
+        let smoothedG = (ENGINE.accelHistory[0] + ENGINE.accelHistory[1] + ENGINE.accelHistory[2]) / 3;
+        
         let now = Date.now();
 
-        // CHỐNG LẮC: Lực vẩy tay mạnh (>25) sẽ bị bỏ qua
-        if (g > 25) {
-            updateStatus("PHÁT HIỆN RUNG LẮC QUÁ MẠNH", true);
+        // CHEAT DETECTION: If smoothed force > 20 (Violent shaking)
+        if (smoothedG > 22) {
+            triggerCheatLock();
             return;
         }
 
-        // Đếm bước khi lực vừa đủ (đi bộ)
-        if (delta > 2.4 && (now - state.lastStepTime > 380)) {
-            // CHỈ TĂNG BƯỚC KHI CÓ GPS XÁC NHẬN ĐANG DI CHUYỂN (hoặc có độ tin cậy)
-            if (state.gpsConfidence > 0.1) {
-                state.steps++;
-                state.lastStepTime = now;
-                updateUI();
-            } else {
-                updateStatus("HÃY BƯỚC ĐI THẬT SỰ!", true);
-            }
-        }
-        state.lastG = g;
-    }
-
-    function handleGPS(pos) {
-        if (!state.isLive) return;
-        const { latitude, longitude, accuracy, speed } = pos.coords;
-        
-        // Hiển thị debug vận tốc để khách biết app đang theo dõi
-        let currentSpeed = speed ? (speed * 3.6).toFixed(1) : 0;
-        document.getElementById('debug').innerText = `Độ chính xác: ±${Math.round(accuracy)}m | Vận tốc: ${currentSpeed} km/h`;
-
-        if (accuracy > 35) return;
-
-        if (state.lastLat !== null) {
-            let d = calculateDistance(state.lastLat, state.lastLon, latitude, longitude);
+        // STEP DETECTION: Natural walking causes 2.5 - 12 deviation from gravity (9.8), debounce 350ms
+        if (Math.abs(smoothedG - 9.8) > 2.5 && (now - ENGINE.lastStepTime > 350)) {
+            ENGINE.steps++;
+            ENGINE.lastStepTime = now;
             
-            // Nếu di chuyển > 0.7m, tăng điểm tin cậy
-            if (d > 0.7 && d < 20) {
-                state.gpsDistance += d;
-                state.gpsConfidence = 1.0; // Reset điểm tin cậy khi có di chuyển thật
-                updateUI();
-            } else {
-                // Giảm dần điểm tin cậy nếu đứng yên
-                state.gpsConfidence *= 0.9;
+            // Logic: Steps only translate to meters if GPS proves we aren't standing still.
+            // We allow a small "leash" (e.g. 5 meters) before GPS must catch up.
+            let theoreticalDist = ENGINE.steps * 0.7;
+            if (theoreticalDist <= ENGINE.gpsDistance + 8) {
+                ENGINE.displayDistance = Math.floor(theoreticalDist);
             }
         }
-        state.lastLat = latitude;
-        state.lastLon = longitude;
     }
 
-    function updateUI() {
-        // Mét hiển thị = GPS tích lũy + (Bước chân * hệ số tin cậy)
-        // Nếu đứng yên, gpsConfidence về 0 -> Bước chân không tăng thêm mét
-        let displayMeters = Math.floor(state.gpsDistance);
+    function processGPS(pos) {
+        if (!ENGINE.isActive) return;
+        const { latitude, longitude, accuracy } = pos.coords;
         
-        document.getElementById('steps').innerText = state.steps;
-        document.getElementById('meters').innerText = displayMeters;
-        document.getElementById('progress-fill').style.width = (displayMeters / state.target * 100) + "%";
-        
-        if (displayMeters > 0) updateStatus("ĐANG GHI NHẬN HÀNH TRÌNH ✅", false);
+        // Only trust accurate readings
+        if (accuracy > 20) {
+            document.getElementById('gps-indicator').style.background = '#f59e0b'; // Yellow warning
+            return;
+        }
+        document.getElementById('gps-indicator').style.background = '#22c55e'; // Green good
 
-        if (displayMeters >= state.target) {
-            finish();
+        if (ENGINE.lastLat !== null) {
+            let d = calcDistance(ENGINE.lastLat, ENGINE.lastLon, latitude, longitude);
+            // Filter noise: only count if move > 1m and < 15m (prevent teleporting)
+            if (d > 1 && d < 15) {
+                ENGINE.gpsDistance += d;
+            }
+        }
+        ENGINE.lastLat = latitude;
+        ENGINE.lastLon = longitude;
+    }
+
+    // --- ANTI-CHEAT PENALTY ---
+    function triggerCheatLock() {
+        if (ENGINE.isCheating) return;
+        ENGINE.isCheating = true;
+        
+        const panel = document.getElementById('panel');
+        panel.classList.add('locked');
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]); // Angry vibration
+
+        clearTimeout(ENGINE.cheatTimeout);
+        ENGINE.cheatTimeout = setTimeout(() => {
+            ENGINE.isCheating = false;
+            panel.classList.remove('locked');
+        }, 2500); // 2.5 second penalty timeout
+    }
+
+    // --- RENDER LOOP ---
+    function renderUI() {
+        if (!ENGINE.isActive) return;
+
+        document.getElementById('display-dist').innerText = ENGINE.displayDistance;
+        document.getElementById('display-steps').innerHTML = `${ENGINE.steps} <span style="font-size: 12px; color:var(--sub)">STEPS</span>`;
+        document.getElementById('display-gps').innerHTML = `${ENGINE.gpsDistance.toFixed(1)} <span style="font-size: 12px; color:var(--sub)">M</span>`;
+
+        // Check Win Condition
+        if (ENGINE.displayDistance >= ENGINE.target) {
+            verifyAndComplete();
+        } else {
+            requestAnimationFrame(renderUI);
         }
     }
 
-    function updateStatus(txt, isWarn) {
-        let m = document.getElementById('msg');
-        m.innerText = txt;
-        m.className = isWarn ? "warning" : "";
+    function verifyAndComplete() {
+        // Final absolute check: Did they actually leave the booth?
+        let totalDisplacement = calcDistance(ENGINE.startLat, ENGINE.startLon, ENGINE.lastLat, ENGINE.lastLon);
+        
+        if (totalDisplacement < 5) { // Needs to be at least 5 meters away from start
+            triggerCheatLock();
+            document.getElementById('warning-text').innerText = "MOVE AWAY FROM THE STARTING POINT";
+            requestAnimationFrame(renderUI); // Keep running
+            return;
+        }
+
+        // Winner
+        ENGINE.isActive = false;
+        document.getElementById('ui-tracking').style.display = 'none';
+        document.getElementById('ui-finish').style.display = 'block';
+        document.getElementById('panel').classList.remove('locked');
+        
+        const authId = "VTG" + Math.random().toString(36).substr(2, 5).toUpperCase();
+        document.getElementById('auth-code').innerText = authId;
+        document.getElementById('qr-code').src = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=AUTH_${authId}&color=fc4c02`;
+        
+        if (navigator.vibrate) navigator.vibrate([500]);
     }
 
-    function calculateDistance(lat1, lon1, lat2, lon2) {
+    // --- MATH UTILS ---
+    function calcDistance(lat1, lon1, lat2, lon2) {
         const R = 6371000;
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
         const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    }
-
-    function finish() {
-        state.isLive = false;
-        document.getElementById('track-screen').style.display = 'none';
-        document.getElementById('finish-screen').style.display = 'block';
-        let c = "VTAU-" + Math.random().toString(36).substr(2, 6).toUpperCase();
-        document.getElementById('code').innerText = c;
-        document.getElementById('qr').src = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=VERIFIED_${c}`;
-        Swal.fire("THÀNH CÔNG!", "Bạn đã hoàn thành quãng đường thực tế.", "success");
     }
 </script>
 </body>
