@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>🏃 VungTauGO! - Sự Kiện Chạy Bộ</title>
+  <title>🏃 VungTauGO! - Sự Kiện Chạy Bộ Pro</title>
   
   <!-- Leaflet CSS + JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -217,7 +217,7 @@
 <body>
 <div id="app">
   <div class="header">
-    <span class="title"><i class="fas fa-map-pin"></i> VungTauGO!</span>
+    <span class="title"><i class="fas fa-map-pin"></i> VungTauGO! Pro</span>
     <div style="display: flex;">
       <div class="target-selector">
         <button class="target-btn" data-target="0.05">50m</button>
@@ -246,7 +246,7 @@
   
   <div class="map-container">
     <div id="map"></div>
-    <div class="gps-status" id="gpsStatus">📍 Đang tìm GPS...</div>
+    <div class="gps-status" id="gpsStatus">🛰️ Đang khởi tạo cảm biến...</div>
   </div>
   
   <div class="controls">
@@ -255,7 +255,7 @@
     <button class="ctrl-btn" id="stopBtn" disabled><i class="fas fa-stop"></i> KẾT THÚC</button>
   </div>
   <div class="footnote">
-    <span><i class="fas fa-microchip"></i> GPS + Lọc Kalman & La Bàn</span>
+    <span><i class="fas fa-satellite-dish"></i> GPS + Kalman + IMU Fusion</span>
     <span>🏆 Hoàn thành nhận voucher</span>
   </div>
 </div>
@@ -276,12 +276,19 @@
   (function(){
     "use strict";
 
-    // ---------- CẤU HÌNH ----------
+    // ---------- CẤU HÌNH NÂNG CAO ----------
     const CONFIG = {
-      kalman: { Q: 0.005, R: 10, P: 1 }, // Hệ số lọc Kalman
-      minDistance: 0.001,                // km (1m)
-      maxSpeed: 25,                      // km/h - chống gian lận xe cộ
-      compassSmoothing: 0.2              // Làm mịn la bàn
+      // Kalman Filter: Q = process noise (tin tưởng mô hình), R = measurement noise (tin tưởng GPS)
+      kalman: { Q: 0.0005, R: 15, P: 1 }, 
+      imu: {
+        stepLength: 0.001,   // km mỗi lần phát hiện bước (~1m)
+        maxStepFreq: 4,      // Tần số bước tối đa mỗi giây (chống rung tay)
+        minStepInterval: 250 // ms giữa các bước
+      },
+      minDistance: 0.0005,   // km (0.5m)
+      maxSpeed: 25,          // km/h - chống gian lận xe cộ
+      compassSmoothing: 0.3, // Làm mịn la bàn
+      sensorTimeout: 5000    // Thời gian tin tưởng dự đoán IMU khi mất GPS (ms)
     };
 
     // ---------- STATE ----------
@@ -294,16 +301,24 @@
     let timerInterval = null;
     let currentSpeed = 0.0;
     
-    // GPS & Kalman Filter
+    // Sensor Fusion State
     let kalman = { lat: null, lng: null, vLat: 0, vLng: 0, P: CONFIG.kalman.P };
-    let lastPosition = null;
-    let lastTimestamp = null;
+    let lastGpsTimestamp = null;
+    let lastFusionTimestamp = null;
     let watchId = null;
     
-    // La bàn (DeviceOrientation)
+    // IMU Data
+    let imu = {
+      acc: { x: 0, y: 0, z: 0 },
+      heading: 0,
+      stepDetected: false,
+      stepCount: 0,
+      lastStepTime: 0,
+      speed: 0
+    };
     let compassHeading = 0;
     let compassActive = false;
-    let compassPermissionGranted = false;
+    let motionPermission = false;
     
     // Map & Path
     let map;
@@ -326,16 +341,17 @@
     const voucherCodeEl = document.getElementById('voucherCode');
     const closeModalBtn = document.getElementById('closeModalBtn');
 
-    // ---------- KALMAN FILTER ----------
-    function kalmanUpdate(measuredLat, measuredLng, dt) {
+    // ---------- KALMAN FILTER NÂNG CAO ----------
+    function kalmanUpdate(measuredLat, measuredLng, dt, accuracy) {
       if (kalman.lat === null) {
         kalman.lat = measuredLat;
         kalman.lng = measuredLng;
         return { lat: measuredLat, lng: measuredLng };
       }
       
+      // Điều chỉnh R (độ tin tưởng) dựa trên accuracy của GPS
+      const R = Math.max(1, Math.min(50, accuracy)) * 0.5;
       const Q = CONFIG.kalman.Q * dt;
-      const R = CONFIG.kalman.R;
       
       // Predict
       let predLat = kalman.lat + kalman.vLat * dt;
@@ -356,30 +372,89 @@
       return { lat: kalman.lat, lng: kalman.lng };
     }
 
-    // ---------- LA BÀN (ĐỊNH HƯỚNG INDOOR) ----------
-    function initCompass() {
-      if (!window.DeviceOrientationEvent) return;
-      
-      // Yêu cầu quyền cho iOS
-      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+    // ---------- IMU: XỬ LÝ CẢM BIẾN ----------
+    function initSensors() {
+      // Yêu cầu quyền cảm biến (iOS)
+      if (typeof DeviceMotionEvent.requestPermission === 'function') {
         document.body.addEventListener('click', function iosPerm() {
+          DeviceMotionEvent.requestPermission().then(perm => {
+            if (perm === 'granted') {
+              motionPermission = true;
+              startSensorListeners();
+            }
+          }).catch(console.error);
+          document.body.removeEventListener('click', iosPerm);
+        }, { once: true });
+      } else {
+        motionPermission = true;
+        startSensorListeners();
+      }
+
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        document.body.addEventListener('click', function iosPerm2() {
           DeviceOrientationEvent.requestPermission().then(perm => {
             if (perm === 'granted') {
               compassPermissionGranted = true;
               window.addEventListener('deviceorientation', handleOrientation);
             }
           }).catch(console.error);
-          document.body.removeEventListener('click', iosPerm);
         }, { once: true });
       } else {
         window.addEventListener('deviceorientation', handleOrientation);
         compassPermissionGranted = true;
       }
     }
-    
+
+    function startSensorListeners() {
+      window.addEventListener('devicemotion', handleMotion);
+      gpsStatusEl.innerHTML = '🧭 IMU đã sẵn sàng';
+    }
+
+    function handleMotion(event) {
+      if (!isActive || isPaused) return;
+      
+      const acc = event.accelerationIncludingGravity;
+      if (!acc) return;
+      
+      imu.acc = { x: acc.x, y: acc.y, z: acc.z };
+      
+      // Phát hiện bước chân đơn giản từ gia tốc (giống Strava)
+      const magnitude = Math.sqrt(acc.x*acc.x + acc.y*acc.y + acc.z*acc.z);
+      const now = Date.now();
+      
+      // Ngưỡng phát hiện bước (đã được hiệu chỉnh)
+      if (magnitude > 12 && (now - imu.lastStepTime) > CONFIG.imu.minStepInterval) {
+        const stepFreq = 1000 / (now - imu.lastStepTime);
+        if (stepFreq < CONFIG.imu.maxStepFreq) {
+          imu.stepDetected = true;
+          imu.stepCount++;
+          imu.lastStepTime = now;
+          
+          // Nếu không có GPS trong 5s, dùng IMU để dự đoán
+          const timeSinceLastGps = lastGpsTimestamp ? now - lastGpsTimestamp : CONFIG.sensorTimeout + 1;
+          if (timeSinceLastGps > CONFIG.sensorTimeout && compassActive) {
+            // Dự đoán vị trí mới dựa trên bước chân và la bàn
+            const headingRad = compassHeading * Math.PI / 180;
+            const stepDistKm = CONFIG.imu.stepLength;
+            const dLat = stepDistKm * Math.cos(headingRad) / 111.32;
+            const dLng = stepDistKm * Math.sin(headingRad) / (111.32 * Math.cos(kalman.lat * Math.PI / 180));
+            
+            if (kalman.lat !== null) {
+              const newLat = kalman.lat + dLat;
+              const newLng = kalman.lng + dLng;
+              kalman.lat = newLat;
+              kalman.lng = newLng;
+              currentDistanceKm += stepDistKm;
+              updatePath(newLat, newLng);
+              updateUI();
+            }
+          }
+        }
+      }
+    }
+
     function handleOrientation(event) {
       if (!compassPermissionGranted) return;
-      // alpha: hướng la bàn (0-360), webkitCompassHeading cho iOS
       let heading = event.alpha || event.webkitCompassHeading;
       if (heading === null || heading === undefined) return;
       
@@ -423,10 +498,9 @@
         pathPolyline = L.polyline(pathCoordinates, {color: '#007bff', weight: 6, opacity: 0.9}).addTo(map);
       }
       
-      // Marker xoay theo hướng la bàn nếu có
       let iconHtml = '<div style="background:#007bff; width:16px; height:16px; border-radius:50%; border:3px solid white; box-shadow:0 0 10px #007bff;"></div>';
       if (compassActive) {
-        iconHtml = `<div style="background:#007bff; width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; border-bottom:20px solid #007bff; transform: rotate(${compassHeading}deg); filter: drop-shadow(0 0 5px #007bff);"></div>`;
+        iconHtml = `<div style="width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; border-bottom:20px solid #007bff; transform: rotate(${compassHeading}deg); filter: drop-shadow(0 0 5px #007bff);"></div>`;
       }
       
       if (userMarker) {
@@ -438,39 +512,40 @@
       map.setView([lat, lng], map.getZoom());
     }
     
-    // ---------- XỬ LÝ GPS ----------
+    // ---------- XỬ LÝ GPS VỚI KALMAN ----------
     function handlePosition(position) {
       const { latitude, longitude, accuracy } = position.coords;
       const now = position.timestamp;
+      lastGpsTimestamp = now;
       
       // Cập nhật trạng thái
       if (accuracy < 30) {
-        gpsStatusEl.innerHTML = `📍 GPS ${Math.round(accuracy)}m (Kalman)`;
+        gpsStatusEl.innerHTML = `🛰️ GPS ${Math.round(accuracy)}m (Kalman)`;
       } else {
-        gpsStatusEl.innerHTML = `⚠️ GPS yếu (${Math.round(accuracy)}m) - Dùng la bàn`;
+        gpsStatusEl.innerHTML = `⚠️ GPS yếu (${Math.round(accuracy)}m) - IMU Fusion`;
       }
       
-      // Kalman Filter
       let filteredLat = latitude, filteredLng = longitude;
-      if (lastTimestamp && kalman.lat !== null) {
-        const dt = (now - lastTimestamp) / 1000; // seconds
+      if (lastFusionTimestamp && kalman.lat !== null) {
+        const dt = (now - lastFusionTimestamp) / 1000; // seconds
         if (dt > 0 && dt < 10) {
-          const filtered = kalmanUpdate(latitude, longitude, dt);
+          const filtered = kalmanUpdate(latitude, longitude, dt, accuracy);
           filteredLat = filtered.lat;
           filteredLng = filtered.lng;
         }
       }
-      lastTimestamp = now;
+      lastFusionTimestamp = now;
       
-      if (!lastPosition) {
-        lastPosition = { lat: filteredLat, lng: filteredLng, timestamp: now };
+      if (!lastGpsTimestamp) {
+        lastGpsTimestamp = now;
         updatePath(filteredLat, filteredLng);
         return;
       }
       
       if (isActive && !isPaused) {
-        const dist = haversine(lastPosition.lat, lastPosition.lng, filteredLat, filteredLng);
-        const timeDiffHours = (now - lastPosition.timestamp) / 3600000;
+        const lastPos = pathCoordinates.length > 0 ? pathCoordinates[pathCoordinates.length-1] : [filteredLat, filteredLng];
+        const dist = haversine(lastPos[0], lastPos[1], filteredLat, filteredLng);
+        const timeDiffHours = (now - lastGpsTimestamp) / 3600000;
         
         let valid = true;
         if (timeDiffHours > 0) {
@@ -484,19 +559,17 @@
           currentDistanceKm += dist;
         }
         
-        lastPosition = { lat: filteredLat, lng: filteredLng, timestamp: now };
         updatePath(filteredLat, filteredLng);
         
         if (currentDistanceKm >= targetDistanceKm) completeGoal();
       } else {
-        lastPosition = { lat: filteredLat, lng: filteredLng, timestamp: now };
         updatePath(filteredLat, filteredLng);
       }
       updateUI();
     }
     
     function handlePositionError(err) {
-      gpsStatusEl.innerHTML = '❌ Lỗi GPS: ' + err.message;
+      gpsStatusEl.innerHTML = `❌ Lỗi GPS: ${err.message}. Dùng IMU dự đoán.`;
     }
     
     function startWatchingGPS() {
@@ -514,7 +587,7 @@
     // ---------- ĐIỀU KHIỂN ----------
     function startActivity() {
       if (!watchId) startWatchingGPS();
-      if (!compassActive) initCompass();
+      if (!motionPermission) initSensors();
       
       isActive = true;
       isPaused = false;
@@ -566,7 +639,9 @@
       currentSpeed = 0;
       startTime = null;
       kalman = { lat: null, lng: null, vLat: 0, vLng: 0, P: CONFIG.kalman.P };
-      lastPosition = null;
+      lastGpsTimestamp = null;
+      lastFusionTimestamp = null;
+      imu.stepCount = 0;
       pathCoordinates = [];
       if (pathPolyline) map.removeLayer(pathPolyline);
       pathPolyline = null;
@@ -646,10 +721,10 @@
       if (e.target === modalOverlay) modalOverlay.style.visibility = 'hidden';
     });
     
-    // Khởi động
+    // Khởi động mọi thứ
     initMap();
     startWatchingGPS();
-    initCompass();
+    initSensors();
     updateUI();
   })();
 </script>
