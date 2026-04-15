@@ -3,9 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>🏃 VungTauGO! - Bước Chạy Thần Tốc</title>
+  <title>🏃 VungTauGO! - Leaflet Edition</title>
   
-  <!-- Google Fonts -->
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Fonts & Icons -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   
@@ -16,7 +18,7 @@
       padding: 0;
     }
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: 'Inter', -apple-system, sans-serif;
       background: #0b0f15;
       color: #fff;
       min-height: 100vh;
@@ -184,13 +186,32 @@
       pointer-events: none;
     }
     
+    /* Permission Hint */
+    .ios-permission-hint {
+      background: #fbbf24;
+      color: #000;
+      padding: 12px 20px;
+      margin: 0 16px 10px;
+      border-radius: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 600;
+    }
+    .ios-permission-hint button {
+      background: #000;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 30px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    
     /* Voucher Modal */
     .modal-overlay {
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(0,0,0,0.8);
       backdrop-filter: blur(6px);
       display: flex;
@@ -209,11 +230,7 @@
       border: 2px solid #fbbf24;
       box-shadow: 0 30px 40px #00000055;
     }
-    .modal-icon {
-      font-size: 64px;
-      color: #fbbf24;
-      margin-bottom: 15px;
-    }
+    .modal-icon { font-size: 64px; color: #fbbf24; margin-bottom: 15px; }
     .voucher-code {
       background: #0f172a;
       padding: 16px;
@@ -243,32 +260,12 @@
       display: flex;
       justify-content: space-between;
     }
-    .ios-permission-hint {
-      background: #fbbf24;
-      color: #000;
-      padding: 12px 20px;
-      margin: 0 16px 10px;
-      border-radius: 40px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      font-weight: 600;
-    }
-    .ios-permission-hint button {
-      background: #000;
-      color: #fff;
-      border: none;
-      padding: 8px 16px;
-      border-radius: 30px;
-      font-weight: 600;
-      cursor: pointer;
-    }
   </style>
 </head>
 <body>
 <div id="app">
   <div class="header">
-    <span class="title"><i class="fas fa-shield-hal"></i> VungTauGO! Pro</span>
+    <span class="title"><i class="fas fa-shield-hal"></i> VungTauGO!</span>
     <div class="target-area">
       <div class="target-badge" id="targetDisplay">🎲 0m</div>
       <button class="random-btn" id="randomTargetBtn"><i class="fas fa-dice"></i> MỤC TIÊU</button>
@@ -331,6 +328,8 @@
   </div>
 </div>
 
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   (function(){
     "use strict";
@@ -344,7 +343,7 @@
         threshold: 11.5,
         shakePenaltyThreshold: 18,
         maxShakeCount: 3,
-        defaultStepLength: 0.8          // meters
+        defaultStepLength: 0.8
       },
       gps: {
         minDistance: 0.001,
@@ -352,10 +351,6 @@
         maxJumpDistance: 0.01,
         weakSignalThreshold: 20,
         driftThreshold: 0.8
-      },
-      prediction: {
-        maxPredictTime: 5,
-        minSpeedForPredict: 1.5
       }
     };
 
@@ -368,12 +363,12 @@
     let startTime = null;
     let elapsedSeconds = 0;
     let timerInterval = null;
-    let currentStepLength = CONFIG.pedometer.defaultStepLength; // meters
+    let currentStepLength = CONFIG.pedometer.defaultStepLength;
     
     // Elevation
-    let currentElevation = 0;
     let totalElevationGain = 0;
     let lastElevation = null;
+    let elevationCache = new Map(); // Tránh gọi API liên tục
     
     // Kalman & GPS
     let kalman = { lat: null, lng: null, vLat: 0, vLng: 0, P: CONFIG.kalman.P };
@@ -383,15 +378,12 @@
     let lastValidPosition = null;
     
     // Motion history
-    let speedHistory = [];
     let avgSpeed = 2.0;
-    let lastPredictionTime = 0;
     let lastStepTimestamp = 0;
     
     // Pedometer
     let lastStepTime = 0;
     let shakeCounter = 0;
-    let stepTrust = true;
     let motionPermissionGranted = false;
     
     // Distance/Steps sync
@@ -399,12 +391,11 @@
     let stepsSinceLastCalibration = 0;
     const CALIBRATION_STEP_COUNT = 30;
     
-    // Google Maps
+    // Leaflet Map
     let map;
     let userMarker;
     let pathPolyline;
     let pathCoordinates = [];
-    let elevationService;
     
     // UI Elements
     const distanceEl = document.getElementById('distanceDisplay');
@@ -425,9 +416,6 @@
     const retryGpsBtn = document.getElementById('retryGpsBtn');
     const iosPermissionHint = document.getElementById('iosPermissionHint');
     const requestMotionBtn = document.getElementById('requestMotionBtn');
-
-    // ---------- GOOGLE MAPS API KEY ----------
-    const GOOGLE_MAPS_API_KEY = 'YOUR_API_KEY'; // THAY API KEY CỦA BẠN
 
     // ---------- KIỂM TRA iOS ----------
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -472,41 +460,18 @@
       return { lat: kalman.lat, lng: kalman.lng };
     }
 
-    // ---------- DỰ ĐOÁN VỊ TRÍ KHI MẤT GPS ----------
-    function predictPosition() {
-      if (!isActive || isPaused) return null;
-      if (kalman.lat === null || kalman.lng === null) return null;
-      
-      const now = Date.now();
-      const dt = (now - lastPredictionTime) / 1000;
-      if (dt <= 0.2) return null;
-      
-      lastPredictionTime = now;
-      
-      const speed = Math.sqrt(kalman.vLat*kalman.vLat + kalman.vLng*kalman.vLng) * 3600;
-      if (speed < CONFIG.prediction.minSpeedForPredict) return null;
-      
-      const predictSeconds = Math.min(dt, CONFIG.prediction.maxPredictTime);
-      const predLat = kalman.lat + kalman.vLat * predictSeconds;
-      const predLng = kalman.lng + kalman.vLng * predictSeconds;
-      
-      kalman.lat = predLat;
-      kalman.lng = predLng;
-      
-      const distKm = speed * (predictSeconds / 3600);
-      currentDistanceKm += distKm;
-      
-      return { lat: predLat, lng: predLng };
-    }
-
-    // ---------- ELEVATION ----------
+    // ---------- ELEVATION (Open-Elevation API) ----------
     async function fetchElevation(lat, lng) {
-      if (!elevationService) return null;
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      if (elevationCache.has(key)) return elevationCache.get(key);
+      
       try {
-        const request = { locations: [new google.maps.LatLng(lat, lng)] };
-        const response = await elevationService.getElevationForLocations(request);
-        if (response.results && response.results.length > 0) {
-          return response.results[0].elevation;
+        const response = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`);
+        const data = await response.json();
+        if (data.results && data.results.length > 0) {
+          const elevation = data.results[0].elevation;
+          elevationCache.set(key, elevation);
+          return elevation;
         }
       } catch (e) {
         console.warn('Elevation error:', e);
@@ -517,15 +482,14 @@
     async function updateElevation(lat, lng) {
       const elevation = await fetchElevation(lat, lng);
       if (elevation !== null) {
-        currentElevation = elevation;
         if (lastElevation !== null && isActive && !isPaused) {
           const gain = elevation - lastElevation;
           if (gain > 0) {
             totalElevationGain += gain;
+            elevationEl.textContent = Math.round(totalElevationGain);
           }
         }
         lastElevation = elevation;
-        elevationEl.textContent = Math.round(totalElevationGain);
       }
     }
 
@@ -533,7 +497,7 @@
     function calibrateStepLength() {
       if (gpsDistanceSinceLastCalibration > 0.01 && stepsSinceLastCalibration > 5) {
         const avgStep = (gpsDistanceSinceLastCalibration * 1000) / stepsSinceLastCalibration;
-        currentStepLength = currentStepLength * 0.7 + avgStep * 0.3; // Làm mịn
+        currentStepLength = currentStepLength * 0.7 + avgStep * 0.3;
         gpsDistanceSinceLastCalibration = 0;
         stepsSinceLastCalibration = 0;
       }
@@ -548,8 +512,6 @@
             window.addEventListener('devicemotion', handleMotion);
             iosPermissionHint.style.display = 'none';
             gpsStatusEl.innerHTML = '✅ Cảm biến đã sẵn sàng';
-          } else {
-            alert('Bạn cần cấp quyền cảm biến để đếm bước chân.');
           }
         }).catch(console.error);
       } else {
@@ -560,10 +522,7 @@
 
     function initPedometer() {
       if (!window.DeviceMotionEvent) return;
-      
-      if (typeof DeviceMotionEvent.requestPermission === 'function') {
-        // iOS: wait for user click
-      } else {
+      if (typeof DeviceMotionEvent.requestPermission !== 'function') {
         window.addEventListener('devicemotion', handleMotion);
         motionPermissionGranted = true;
       }
@@ -626,45 +585,35 @@
     function updateUI() {
       distanceEl.textContent = currentDistanceKm.toFixed(2);
       stepsEl.textContent = steps;
-      elevationEl.textContent = Math.round(totalElevationGain);
     }
     
     function updatePath(lat, lng) {
       if (!map) return;
       
-      const newPoint = new google.maps.LatLng(lat, lng);
-      pathCoordinates.push(newPoint);
-      
+      pathCoordinates.push([lat, lng]);
       if (pathPolyline) {
-        pathPolyline.setPath(pathCoordinates);
+        pathPolyline.setLatLngs(pathCoordinates);
       } else {
-        pathPolyline = new google.maps.Polyline({
-          path: pathCoordinates,
-          strokeColor: '#007bff',
-          strokeOpacity: 0.9,
-          strokeWeight: 6,
-          map: map,
+        pathPolyline = L.polyline(pathCoordinates, {
+          color: '#007bff',
+          weight: 6,
+          opacity: 0.9,
           smoothFactor: 1.0
-        });
+        }).addTo(map);
       }
       
       if (userMarker) {
-        userMarker.setPosition(newPoint);
+        userMarker.setLatLng([lat, lng]);
       } else {
-        userMarker = new google.maps.Marker({
-          position: newPoint,
-          map: map,
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: '#007bff',
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 3
-          }
-        });
+        userMarker = L.circleMarker([lat, lng], {
+          radius: 6,
+          color: '#007bff',
+          weight: 3,
+          fillColor: '#fff',
+          fillOpacity: 1
+        }).addTo(map);
       }
-      map.panTo(newPoint);
+      map.panTo([lat, lng]);
       
       // Cập nhật elevation
       updateElevation(lat, lng);
@@ -676,30 +625,21 @@
       gpsErrorPanel.style.display = 'flex';
       
       let errorMsg = '';
-      let isPermissionDenied = false;
-      
       switch(err.code) {
         case 1:
-          isPermissionDenied = true;
-          errorMsg = '🚫 Quyền vị trí bị từ chối. ';
-          if (isIOS) {
-            errorMsg += 'Vào Cài đặt > Quyền riêng tư > Dịch vụ vị trí > Safari và chọn "Khi dùng ứng dụng".';
-          } else {
-            errorMsg += 'Vào Cài đặt > Ứng dụng > Trình duyệt > Quyền > Vị trí.';
-          }
+          errorMsg = '🚫 Quyền vị trí bị từ chối. Vào Cài đặt > Safari > Vị trí > "Khi dùng ứng dụng".';
           break;
         case 2:
-          errorMsg = '📡 Không thể lấy vị trí. Kiểm tra kết nối mạng hoặc thử lại sau.';
+          errorMsg = '📡 Không thể lấy vị trí. Kiểm tra kết nối mạng.';
           break;
         case 3:
-          errorMsg = '⏳ Yêu cầu vị trí quá thời gian. Thử lại ở khu vực thoáng hơn.';
+          errorMsg = '⏳ Timeout. Thử lại ở khu vực thoáng hơn.';
           break;
         default:
-          errorMsg = `❌ Lỗi không xác định: ${err.message}`;
+          errorMsg = `❌ Lỗi: ${err.message}`;
       }
-      
       gpsErrorMsg.textContent = errorMsg;
-      gpsStatusEl.innerHTML = isPermissionDenied ? '🚫 Chưa cấp quyền GPS' : '⚠️ Lỗi GPS';
+      gpsStatusEl.innerHTML = '⚠️ Lỗi GPS';
     }
 
     function retryGps() {
@@ -713,14 +653,7 @@
     }
 
     function openLocationSettings() {
-      if (isIOS) {
-        alert('Vào Cài đặt > Quyền riêng tư & Bảo mật > Dịch vụ vị trí > Safari > Chọn "Khi dùng ứng dụng"');
-      } else {
-        window.location.href = 'app-settings:';
-        setTimeout(() => {
-          alert('Vào Cài đặt > Ứng dụng > [Trình duyệt] > Quyền > Vị trí');
-        }, 500);
-      }
+      alert('Vào Cài đặt > Quyền riêng tư > Dịch vụ vị trí > Safari > Chọn "Khi dùng ứng dụng"');
     }
     
     function handlePosition(position) {
@@ -734,7 +667,6 @@
       }
       
       lastGpsTimestamp = now;
-      lastPredictionTime = now;
       gpsStatusEl.innerHTML = `🛰️ GPS ${Math.round(accuracy)}m`;
       
       let filteredLat = latitude, filteredLng = longitude;
@@ -761,11 +693,8 @@
       
       if (timeDiff > 0) {
         speed = dist / timeDiff;
-        
         if (speed < CONFIG.gps.maxSpeed * 1.2) {
-          speedHistory.push(speed);
-          if (speedHistory.length > 5) speedHistory.shift();
-          avgSpeed = speedHistory.reduce((a,b) => a+b, 0) / speedHistory.length;
+          avgSpeed = avgSpeed * 0.9 + speed * 0.1;
         }
         
         if (speed > CONFIG.gps.maxSpeed || dist > CONFIG.gps.maxJumpDistance) {
@@ -787,28 +716,12 @@
           lastValidPosition = { lat: filteredLat, lng: filteredLng, timestamp: now };
           updatePath(filteredLat, filteredLng);
           
-          // Hiệu chỉnh độ dài bước
           calibrateStepLength();
         }
       }
       
       updateUI();
       if (currentDistanceKm >= targetDistanceKm) completeGoal();
-    }
-    
-    function startPredictionLoop() {
-      setInterval(() => {
-        if (!isActive || isPaused) return;
-        const timeSinceLastGps = lastGpsTimestamp ? Date.now() - lastGpsTimestamp : 9999;
-        if (timeSinceLastGps > 3000) {
-          const predicted = predictPosition();
-          if (predicted) {
-            updatePath(predicted.lat, predicted.lng);
-            updateUI();
-            if (currentDistanceKm >= targetDistanceKm) completeGoal();
-          }
-        }
-      }, 1000);
     }
     
     function startWatchingGPS() {
@@ -835,14 +748,12 @@
       
       isActive = true;
       isPaused = false;
-      lastPredictionTime = Date.now();
       if (!startTime) startTime = Date.now() - elapsedSeconds * 1000;
       else startTime = Date.now() - elapsedSeconds * 1000;
       
       timerInterval = setInterval(() => {
         if (isActive && !isPaused) {
           elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-          updateUI();
         }
       }, 200);
       
@@ -859,10 +770,8 @@
         pauseBtn.innerHTML = '<i class="fas fa-play"></i> TIẾP TỤC';
       } else {
         startTime = Date.now() - elapsedSeconds * 1000;
-        lastPredictionTime = Date.now();
         timerInterval = setInterval(() => {
           elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-          updateUI();
         }, 200);
         pauseBtn.innerHTML = '<i class="fas fa-pause"></i> TẠM DỪNG';
       }
@@ -895,17 +804,16 @@
       lastStepTime = 0;
       lastStepTimestamp = 0;
       shakeCounter = 0;
-      stepTrust = true;
-      speedHistory = [];
       avgSpeed = 2.0;
       pathCoordinates = [];
-      if (pathPolyline) pathPolyline.setMap(null);
+      if (pathPolyline) map.removeLayer(pathPolyline);
       pathPolyline = null;
-      if (userMarker) userMarker.setMap(null);
+      if (userMarker) map.removeLayer(userMarker);
       userMarker = null;
       
       generateRandomTarget();
       updateUI();
+      elevationEl.textContent = '0';
     }
     
     function completeGoal() {
@@ -922,37 +830,29 @@
       modalOverlay.style.visibility = 'visible';
     }
     
-    // ---------- GOOGLE MAPS ----------
-    async function initMap() {
-      const { Map } = await google.maps.importLibrary("maps");
-      const { AdvancedMarkerElement } = await google.maps.importLibrary("marker");
-      const { ElevationService } = await google.maps.importLibrary("elevation");
+    // ---------- MAP INIT ----------
+    function initMap() {
+      map = L.map('map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([10.3469, 107.0843], 17);
       
-      elevationService = new ElevationService();
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(map);
       
-      map = new Map(document.getElementById('map'), {
-        center: { lat: 10.3469, lng: 107.0843 },
-        zoom: 17,
-        mapId: 'VUNGTAGO_MAP_ID',
-        disableDefaultUI: true,
-        zoomControl: true,
-        zoomControlOptions: { position: google.maps.ControlPosition.RIGHT_BOTTOM }
-      });
+      L.control.attribution({ position: 'bottomleft' }).addTo(map);
+      L.control.zoom({ position: 'bottomright' }).addTo(map);
       
       navigator.geolocation.getCurrentPosition((pos) => {
-        map.setCenter({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        map.setView([pos.coords.latitude, pos.coords.longitude], 18);
         updatePath(pos.coords.latitude, pos.coords.longitude);
         gpsStatusEl.innerHTML = '📍 Sẵn sàng';
       }, (err) => {
         handlePositionError(err);
       }, { enableHighAccuracy: true });
-    }
-
-    function loadGoogleMapsAPI() {
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&callback=initMap&v=weekly&libraries=places,elevation`;
-      script.defer = true;
-      document.head.appendChild(script);
     }
     
     // ---------- EVENT LISTENERS ----------
@@ -981,11 +881,9 @@
     }
     
     // Khởi động
-    window.initMap = initMap;
-    loadGoogleMapsAPI();
+    initMap();
     startWatchingGPS();
     initPedometer();
-    startPredictionLoop();
     updateUI();
   })();
 </script>
