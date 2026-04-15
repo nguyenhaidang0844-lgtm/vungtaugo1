@@ -123,6 +123,32 @@
       backdrop-filter: blur(4px);
       pointer-events: none;
     }
+    .gps-error-panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      background: rgba(220, 38, 38, 0.9);
+      padding: 12px;
+      border-radius: 16px;
+      color: white;
+      font-size: 14px;
+      z-index: 1001;
+      backdrop-filter: blur(4px);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .gps-error-panel button {
+      background: white;
+      color: #dc2626;
+      border: none;
+      padding: 10px;
+      border-radius: 30px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+    }
     .controls {
       display: flex;
       gap: 12px;
@@ -236,6 +262,13 @@
   <div class="map-container">
     <div id="map"></div>
     <div class="gps-status" id="gpsStatus">🛰️ Đang khởi tạo GPS...</div>
+    <div class="gps-error-panel" id="gpsErrorPanel" style="display: none;">
+      <span id="gpsErrorMsg">Lỗi GPS</span>
+      <div style="display: flex; gap: 8px;">
+        <button id="openSettingsBtn"><i class="fas fa-cog"></i> Mở Cài Đặt</button>
+        <button id="retryGpsBtn"><i class="fas fa-sync-alt"></i> Thử Lại</button>
+      </div>
+    </div>
   </div>
   
   <div class="controls">
@@ -277,13 +310,13 @@
       },
       gps: {
         minDistance: 0.0005,
-        maxSpeed: 25,            // km/h - cho phép chạy nước rút
-        maxJumpDistance: 0.04,    // 40m
-        weakSignalThreshold: 30   // mét (accuracy >30m coi là yếu)
+        maxSpeed: 25,
+        maxJumpDistance: 0.04,
+        weakSignalThreshold: 30
       },
       prediction: {
-        maxPredictTime: 10,       // giây - thời gian tối đa dự đoán khi mất GPS
-        minSpeedForPredict: 2     // km/h - dưới tốc độ này không dự đoán
+        maxPredictTime: 10,
+        minSpeedForPredict: 2
       }
     };
 
@@ -306,7 +339,7 @@
     
     // Học chuyển động
     let speedHistory = [];
-    let avgSpeed = 5.0; // km/h mặc định
+    let avgSpeed = 5.0;
     let lastPredictionTime = 0;
     
     // Pedometer anti-cheat
@@ -334,6 +367,10 @@
     const modalOverlay = document.getElementById('voucherModal');
     const voucherCodeEl = document.getElementById('voucherCode');
     const closeModalBtn = document.getElementById('closeModalBtn');
+    const gpsErrorPanel = document.getElementById('gpsErrorPanel');
+    const gpsErrorMsg = document.getElementById('gpsErrorMsg');
+    const openSettingsBtn = document.getElementById('openSettingsBtn');
+    const retryGpsBtn = document.getElementById('retryGpsBtn');
 
     // ---------- RANDOM MỤC TIÊU ----------
     function generateRandomTarget() {
@@ -372,35 +409,27 @@
       return { lat: kalman.lat, lng: kalman.lng };
     }
 
-    // ---------- DỰ ĐOÁN VỊ TRÍ KHI MẤT GPS (Dead Reckoning) ----------
+    // ---------- DỰ ĐOÁN VỊ TRÍ KHI MẤT GPS ----------
     function predictPosition() {
       if (!isActive || isPaused) return null;
       if (kalman.lat === null || kalman.lng === null) return null;
       
       const now = Date.now();
       const dt = (now - lastPredictionTime) / 1000;
-      if (dt <= 0.2) return null; // quá gần, không cần dự đoán thêm
+      if (dt <= 0.2) return null;
       
       lastPredictionTime = now;
       
-      // Sử dụng vận tốc từ Kalman (đã được lọc)
-      const speed = Math.sqrt(kalman.vLat*kalman.vLat + kalman.vLng*kalman.vLng) * 3600; // km/h
+      const speed = Math.sqrt(kalman.vLat*kalman.vLat + kalman.vLng*kalman.vLng) * 3600;
+      if (speed < CONFIG.prediction.minSpeedForPredict) return null;
       
-      if (speed < CONFIG.prediction.minSpeedForPredict) {
-        // Đứng yên hoặc đi rất chậm, không dự đoán xa
-        return null;
-      }
-      
-      // Giới hạn thời gian dự đoán
       const predictSeconds = Math.min(dt, CONFIG.prediction.maxPredictTime);
       const predLat = kalman.lat + kalman.vLat * predictSeconds;
       const predLng = kalman.lng + kalman.vLng * predictSeconds;
       
-      // Cập nhật vị trí dự đoán vào Kalman (không cần measurement)
       kalman.lat = predLat;
       kalman.lng = predLng;
       
-      // Cộng quãng đường ước lượng
       const distKm = speed * (predictSeconds / 3600);
       currentDistanceKm += distKm;
       
@@ -503,12 +532,82 @@
       map.setView([lat, lng], map.getZoom());
     }
     
+    // ---------- XỬ LÝ LỖI GPS CHI TIẾT ----------
+    function handlePositionError(err) {
+      console.warn('GPS Error:', err);
+      gpsErrorPanel.style.display = 'flex';
+      
+      let errorMsg = '';
+      let isPermissionDenied = false;
+      
+      switch(err.code) {
+        case err.PERMISSION_DENIED:
+          isPermissionDenied = true;
+          errorMsg = '🚫 Quyền vị trí bị từ chối. ';
+          if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+            errorMsg += 'Vào Cài đặt > Quyền riêng tư > Dịch vụ vị trí > Safari và chọn "Khi dùng ứng dụng".';
+          } else {
+            errorMsg += 'Vào Cài đặt > Ứng dụng > Trình duyệt > Quyền > Vị trí.';
+          }
+          break;
+        case err.POSITION_UNAVAILABLE:
+          errorMsg = '📡 Không thể lấy vị trí. Kiểm tra kết nối mạng hoặc thử lại sau.';
+          break;
+        case err.TIMEOUT:
+          errorMsg = '⏳ Yêu cầu vị trí quá thời gian. Thử lại ở khu vực thoáng hơn.';
+          break;
+        default:
+          errorMsg = `❌ Lỗi không xác định: ${err.message}`;
+      }
+      
+      gpsErrorMsg.textContent = errorMsg;
+      gpsStatusEl.innerHTML = isPermissionDenied ? '🚫 Chưa cấp quyền GPS' : '⚠️ Lỗi GPS';
+      
+      if (isPermissionDenied) {
+        // Tự động kiểm tra lại quyền nếu có API Permissions
+        if (navigator.permissions) {
+          navigator.permissions.query({name:'geolocation'}).then(perm => {
+            if (perm.state === 'denied') {
+              gpsStatusEl.innerHTML = '🚫 Quyền bị từ chối';
+            } else if (perm.state === 'prompt') {
+              // Người dùng chưa quyết định, thử lại
+              retryGps();
+            }
+          });
+        }
+      }
+    }
+
+    function retryGps() {
+      gpsErrorPanel.style.display = 'none';
+      gpsStatusEl.innerHTML = '🔄 Đang thử lại GPS...';
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+      startWatchingGPS();
+    }
+
+    function openLocationSettings() {
+      // Mở cài đặt vị trí (không phải lúc nào cũng hoạt động)
+      if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+        alert('Vào Cài đặt > Quyền riêng tư & Bảo mật > Dịch vụ vị trí > Safari > Chọn "Khi dùng ứng dụng"');
+      } else {
+        // Android: cố gắng mở cài đặt ứng dụng
+        window.location.href = 'app-settings:';
+        setTimeout(() => {
+          alert('Vào Cài đặt > Ứng dụng > [Trình duyệt] > Quyền > Vị trí');
+        }, 500);
+      }
+    }
+    
     // ---------- GPS VỚI HỌC CHUYỂN ĐỘNG ----------
     function handlePosition(position) {
+      gpsErrorPanel.style.display = 'none';
       const { latitude, longitude, accuracy } = position.coords;
       const now = position.timestamp;
       lastGpsTimestamp = now;
-      lastPredictionTime = now; // reset prediction timer
+      lastPredictionTime = now;
       
       const isWeak = accuracy > CONFIG.gps.weakSignalThreshold;
       gpsStatusEl.innerHTML = isWeak ? 
@@ -526,13 +625,12 @@
       }
       lastFusionTimestamp = now;
       
-      // Cập nhật lịch sử tốc độ để học
       if (lastValidPosition) {
         const dist = haversine(lastValidPosition.lat, lastValidPosition.lng, filteredLat, filteredLng);
         const timeDiffHours = (now - lastValidPosition.timestamp) / 3600000;
         if (timeDiffHours > 0) {
           const speed = dist / timeDiffHours;
-          if (speed < CONFIG.gps.maxSpeed * 1.5) { // cho phép chạy nhanh
+          if (speed < CONFIG.gps.maxSpeed * 1.5) {
             speedHistory.push(speed);
             if (speedHistory.length > 10) speedHistory.shift();
             avgSpeed = speedHistory.reduce((a,b) => a+b, 0) / speedHistory.length;
@@ -540,7 +638,6 @@
         }
       }
       
-      // Kiểm tra jump
       if (lastValidPosition) {
         const dist = haversine(lastValidPosition.lat, lastValidPosition.lng, filteredLat, filteredLng);
         const timeDiffHours = (now - lastValidPosition.timestamp) / 3600000;
@@ -548,7 +645,6 @@
         
         if (timeDiffHours > 0) {
           const speed = dist / timeDiffHours;
-          // Cho phép chạy nhanh gấp 2.5 lần tốc độ trung bình
           if (speed > Math.max(CONFIG.gps.maxSpeed, avgSpeed * 2.5)) valid = false;
         }
         if (dist > CONFIG.gps.maxJumpDistance) valid = false;
@@ -576,24 +672,9 @@
       updateUI();
     }
     
-    function handlePositionError(err) {
-      gpsStatusEl.innerHTML = `❌ Mất GPS - Dự đoán từ chuyển động trước`;
-      // Kích hoạt dự đoán ngay lập tức
-      if (isActive && !isPaused) {
-        const predicted = predictPosition();
-        if (predicted) {
-          updatePath(predicted.lat, predicted.lng);
-          updateUI();
-          if (currentDistanceKm >= targetDistanceKm) completeGoal();
-        }
-      }
-    }
-    
-    // Tích hợp dự đoán định kỳ khi GPS yếu
     function startPredictionLoop() {
       setInterval(() => {
         if (!isActive || isPaused) return;
-        // Nếu đã lâu không có GPS (quá 3 giây) hoặc GPS đang báo yếu
         const timeSinceLastGps = lastGpsTimestamp ? Date.now() - lastGpsTimestamp : 9999;
         if (timeSinceLastGps > 3000) {
           const predicted = predictPosition();
@@ -721,7 +802,9 @@
         map.setView([pos.coords.latitude, pos.coords.longitude], 18);
         updatePath(pos.coords.latitude, pos.coords.longitude);
         gpsStatusEl.innerHTML = '📍 Sẵn sàng';
-      }, ()=>{}, {enableHighAccuracy: true});
+      }, (err) => {
+        handlePositionError(err);
+      }, {enableHighAccuracy: true});
     }
     
     // ---------- EVENT LISTENERS ----------
@@ -747,6 +830,9 @@
     modalOverlay.addEventListener('click', (e) => {
       if (e.target === modalOverlay) modalOverlay.style.visibility = 'hidden';
     });
+    
+    openSettingsBtn.addEventListener('click', openLocationSettings);
+    retryGpsBtn.addEventListener('click', retryGps);
     
     // Khởi động
     initMap();
